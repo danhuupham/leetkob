@@ -1,9 +1,9 @@
 {
-  "name": "awad-quality-gate-starter",
+  "name": "leetkob",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Session 7 starter: a slice of LeeTKOB and a CI gate that cannot fail. Make it bite.",
+  "description": "LeeTKOB — C++ Lab Constraint Review, TA Review Queue, and Grade Publishing Gate",
   "engines": {
     "node": ">=22.13"
   },
@@ -11,14 +11,18 @@
     "start": "node src/server.js",
     "lint": "eslint .",
     "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
     "test": "node --test --test-reporter=spec \"test/unit/**/*.test.js\"",
     "contract": "node --test --test-reporter=spec \"test/contract/**/*.test.js\"",
+    "scan": "node scripts/scan-secrets.js",
     "e2e": "playwright test",
-    "check": "npm run lint && npm run format:check && npm test && npm run contract"
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run contract && npm run scan"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
+    "@types/node": "^22.13.0",
     "eslint": "^9.17.0",
-    "prettier": "^3.4.0"
+    "prettier": "^3.4.0",
+    "typescript": "^5.7.3"
   }
 }
