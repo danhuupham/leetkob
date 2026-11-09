@@ -1,0 +1,24 @@
+{
+  "name": "awad-quality-gate-starter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Session 7 starter: a slice of LeeTKOB and a CI gate that cannot fail. Make it bite.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "test": "node --test --test-reporter=spec \"test/unit/**/*.test.js\"",
+    "contract": "node --test --test-reporter=spec \"test/contract/**/*.test.js\"",
+    "e2e": "playwright test",
+    "check": "npm run lint && npm run format:check && npm test && npm run contract"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.0"
+  }
+}

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LeeTKOB: review queue</title>
+    <style>
+      body {
+        font:
+          16px system-ui,
+          sans-serif;
+        max-width: 40rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      li {
+        margin: 0.5rem 0;
+      }
+      button {
+        min-height: 44px;
+        padding: 0 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Lab 1: review queue</h1>
+    <label>
+      Signed in as
+      <select id="who">
+        <option value="">choose…</option>
+        <option value="ta_a">ta_a</option>
+        <option value="ta_b">ta_b</option>
+        <option value="stu1">stu1</option>
+      </select>
+    </label>
+    <ul id="queue"></ul>
+    <button id="publish" type="button" hidden>Publish grades</button>
+    <p role="status" id="status"></p>
+    <script type="module">
+      const who = document.querySelector('#who');
+      const list = document.querySelector('#queue');
+      const publish = document.querySelector('#publish');
+      const status = document.querySelector('#status');
+      const headers = () => ({ authorization: `Bearer tok-${who.value.replace('_', '-')}` });
+
+      async function load() {
+        list.replaceChildren();
+        const res = await fetch('/api/labs/1/queue', { headers: headers() });
+        publish.hidden = !res.ok;
+        if (!res.ok) return;
+        const { items } = await res.json();
+        for (const s of items) {
+          const li = document.createElement('li');
+          li.textContent = `${s.student}: ${s.verdict} `;
+          if (s.decision) li.append(`(${s.decision}) `);
+          else {
+            const b = document.createElement('button');
+            b.textContent = `Confirm ${s.student}`;
+            b.addEventListener('click', async () => {
+              await fetch(`/api/submissions/${s.id}/review`, {
+                method: 'POST',
+                headers: { ...headers(), 'content-type': 'application/json' },
+                body: JSON.stringify({ decision: 'confirm' }),
+              });
+              status.textContent = `Reviewed submission ${s.id}`;
+              await load();
+            });
+            li.append(b);
+          }
+          list.append(li);
+        }
+      }
+
+      publish.addEventListener('click', async () => {
+        const res = await fetch('/api/labs/1/publish', { method: 'POST', headers: headers() });
+        const body = await res.json();
+        status.textContent = res.ok ? `Published at ${body.publishedAt}` : body.title;
+      });
+      who.addEventListener('change', load);
+    </script>
+  </body>
+</html>
