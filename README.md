@@ -64,7 +64,7 @@ In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2` Rubric (Criter
 
 ## 4. Assistant Rules, Permissions & Secrets
 
-- **Rules Files:** [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md), and [`.github/copilot-instructions.md`](.github/copilot-instructions.md) define our **Stack**, **Commands**, **Conventions**, **Never** rules, and **Three-Tier Permissions** (`Allowed`, `Ask First`, `Never`).
+- **Rules File:** [`AGENTS.md`](AGENTS.md) defines our **Stack**, **Commands**, **Conventions**, **Never** rules, and **Three-Tier Permissions** (`Allowed`, `Ask First`, `Never`).
 - **Environment Template:** [`.env.example`](.env.example) documents all configuration variables without secret values. `.env` is ignored by [`.gitignore`](.gitignore).
 - **Startup Validation & Sandbox Isolation:** [`src/config.js`](src/config.js) validates all environment variables once at startup (`loadConfig()`) and provides `getSandboxEnv()`, which strips `MODEL_API_KEY`, `SESSION_SECRET`, and all host environment variables before spawning the C++ judge sandbox.
 - **Whole-History Secret Scanning:** `npm run scan` ([`scripts/scan-secrets.js`](scripts/scan-secrets.js)) scans both current files and `git log -p --all` in CI (`fetch-depth: 0`).
@@ -76,7 +76,7 @@ In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2` Rubric (Criter
 | Path | Purpose |
 |---|---|
 | [`PA2.md`](PA2.md) | Submission index with links to the repo, branch protection, blocked PR, green fix commit, deliberate contract break PR, and `pa2` tag CI run |
-| [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) | Assistant rules file (Stack, Commands, Conventions, Never, and 3-tier permissions) |
+| [`AGENTS.md`](AGENTS.md) | Assistant rules file (Stack, Commands, Conventions, Never, and 3-tier permissions) |
 | [`.env.example`](.env.example) | Environment variable template (committed with empty secrets) |
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Required GitHub Actions workflows (`gates` and `e2e`) |
 | [`docs/contract/publish.md`](docs/contract/publish.md) | Complete RFC 9457 API contract for `POST /api/labs/{labId}/publish` |
