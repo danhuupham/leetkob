@@ -81,9 +81,14 @@ export async function startApp() {
     return row ? row.t : null;
   };
 
+  const breakDb = () => {
+    db.close();
+  };
+
   return {
     as,
     publishedAt,
+    breakDb,
     close: () => new Promise((r) => server.close(() => r(undefined))),
   };
 }
