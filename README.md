@@ -1,110 +1,94 @@
-# Session 7 starter: a gate that cannot fail
+# LeeTKOB — Harness, Quality Gate & Endpoint Contract (`PA#2`)
 
-CSC13114 · Advanced Web Application Development · HK1 2026–2027
+**Course:** CSC13114 — Advanced Web Application Development · HK1 2026–2027  
+**Team Members:**
+- `20120450` — Phạm Hữu Đan
+- `21120595` — Nguyễn Thành Vinh
+- `23120256` — Trần Đại Hiệp
 
-A small piece of **LeeTKOB**: the TA's review queue and the *Publish grades* step, with its
-contract in [`docs/contract/publish.md`](docs/contract/publish.md).
+**LeeTKOB** helps teaching assistants (TAs) verify, with line-level evidence, that Accepted C++ lab submissions follow the assignment's algorithmic and syntax constraints before marks are published (`FAQ-01`–`FAQ-14`).
 
-The GitHub Actions workflow in this repository is green. **It proves nothing.** Your job is
-to make it bite: a bad pull request must go red, and red must stop the merge.
+This repository contains the **project harness**, **enforced CI quality gate**, **TA review queue & grade publishing slice**, and the **executable API contract** for `POST /api/labs/{labId}/publish` ([`docs/contract/publish.md`](docs/contract/publish.md)). See [`PA2.md`](PA2.md) for direct links to the protected `main` branch, blocked red PRs, green fix commits, deliberate contract break PR, and `pa2` tag CI run.
 
-**Nothing to hand in, not graded.** Already have a LeeTKOB repository with a harness? Read
-step 1 here, then do steps 2–6 on your own repository. That work counts towards `PA#2`.
+---
 
-You need Node 22.13+, Git, and a GitHub account. Playwright's browser runs in CI, so you do
-not have to install it on your laptop.
+## 1. Quick Start (Fresh Clone to Green in < 2 Minutes)
 
-## Commands
+**Prerequisites:** Node.js `>= 22.13.0` (built-in `node:sqlite` and `node:test`) and `npm`.
 
 ```bash
-npm ci                  # exactly what the lockfile says
-npm start               # http://localhost:3007
-npm run lint            # ESLint
-npm run format:check    # Prettier
-npm test                # unit tests
-npm run contract        # contract tests for docs/contract/publish.md
-npm run check           # all four above: this is the gate
-npm run e2e             # one browser journey (needs: npx playwright install chromium)
+git clone https://github.com/danhuupham/leetkob.git
+cd leetkob
+cp .env.example .env
+npm ci
+npm run check
 ```
 
-## The steps
+To start the local server (`http://localhost:3007`):
 
-### 1. Predict (5 minutes, no assistant)
+```bash
+npm start
+```
 
-Press **Use this template → Create a new repository**, and make it **public**: branch
-protection is free only on public repositories. Clone it, and read
-`.github/workflows/ci.yml` and `test/contract/`.
+---
 
-Write down every way this gate can stay green on a broken build. Then run `npm run check`
-on your laptop and compare with what the workflow runs.
+## 2. One Command for Every Check (Local & CI)
 
-### 2. Make the workflow honest
+Every check runs with one documented command locally and in GitHub Actions (`.github/workflows/ci.yml`), using the **exact same commands**:
 
-Commit first, so `git diff` shows exactly what your assistant changed. Then hand it over.
-A brief that works:
+| Check | Command | Tool / Scope |
+|---|---|---|
+| **Install (strict lockfile)** | `npm ci` | Installs exact versions from `package-lock.json` |
+| **Lint** | `npm run lint` | `eslint .` (ESLint 9 flat config) |
+| **Format check** | `npm run format:check` | `prettier --check .` (Prettier 3) |
+| **Type check** | `npm run typecheck` | `tsc --noEmit` (TypeScript 5 with `checkJs: true`, `strict: true`) |
+| **Unit tests** | `npm test` | `node --test --test-reporter=spec "test/unit/**/*.test.js"` |
+| **Contract tests** | `npm run contract` | `node --test --test-reporter=spec "test/contract/**/*.test.js"` |
+| **Secret scan (tree + history)** | `npm run scan` | `node scripts/scan-secrets.js` (scans working tree & `git log -p --all`) |
+| **All synchronous gates** | `npm run check` | Runs `lint` + `format:check` + `typecheck` + `test` + `contract` + `scan` |
+| **End-to-end browser gate** | `npm run e2e` | `playwright test` (`e2e/publish.spec.js` in Chromium) |
 
-> Make `.github/workflows/ci.yml` fail whenever a check fails. It must run on every pull
-> request, on the Node version `package.json` asks for, and run the same `npm run check` a
-> developer runs. Show me your plan first. Do not touch `src/` or `test/` in this step.
+---
 
-Open it as a pull request and expect red: **red is the point of this step.** Read the log. The first failure is a lint error that the old workflow was hiding. Have your assistant fix that one line and push.
+## 3. LLM Provider, Cost per Lab & Spending Cap
 
-The PR goes green. Do not celebrate yet, and do not merge: step 4 is why.
+In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2` Rubric (Criterion 2):
 
-### 3. Protect `main`
+- **Model Provider & Model:** Google Gemini API — `gemini-2.5-flash` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-2.5-flash`), invoked exclusively from the backend server (`src/`).
+- **Estimated Cost per Lab:** A typical lab has ~80 Accepted C++ submissions (`~1,200` input tokens and `~250` output tokens per semantic constraint check after hard rules filter obvious violations). At `gemini-2.5-flash` pricing (`$0.15 / 1M` input tokens, `$0.60 / 1M` output tokens), checking one full lab of 80 submissions costs **~$0.012 USD** (well under 2 cents per lab).
+- **Per-Lab Application Cost Cap:** `MODEL_MAX_COST_USD_PER_LAB=0.25` (enforced by `src/config.js`; if a lab's cumulative token usage reaches `$0.25 USD`, remaining semantic checks fall back to verdict `unsure` with reason `cost-cap-exceeded` per `FAQ-09` so a TA reviews them manually).
+- **Provider Hard Spending Cap:** The `MODEL_API_KEY` used for LeeTKOB has a **hard monthly spending cap of `$5.00 USD / month`** configured on the Google Cloud Billing / Google AI Studio project, with separate keys per environment (`development`, `CI`, `production`).
+- **Zero Model Calls in Automated Tests:** Unit tests (`npm test`), contract tests (`npm run contract`), and e2e tests (`npm run e2e`) **never** call the live Gemini API and require no API key to pass on a fresh clone or in CI.
 
-*Settings → Branches → Add branch protection rule*, for `main`:
+---
 
-- *Require a pull request before merging*
-- *Require status checks to pass before merging*, then pick your job name (`gates`)
-- *Do not allow bypassing the above settings*
+## 4. Assistant Rules, Permissions & Secrets
 
-The check appears in the list only after it has run once on your repository. That is why
-step 2 comes first.
+- **Rules Files:** [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md), and [`.github/copilot-instructions.md`](.github/copilot-instructions.md) define our **Stack**, **Commands**, **Conventions**, **Never** rules, and **Three-Tier Permissions** (`Allowed`, `Ask First`, `Never`).
+- **Environment Template:** [`.env.example`](.env.example) documents all configuration variables without secret values. `.env` is ignored by [`.gitignore`](.gitignore).
+- **Startup Validation & Sandbox Isolation:** [`src/config.js`](src/config.js) validates all environment variables once at startup (`loadConfig()`) and provides `getSandboxEnv()`, which strips `MODEL_API_KEY`, `SESSION_SECRET`, and all host environment variables before spawning the C++ judge sandbox.
+- **Whole-History Secret Scanning:** `npm run scan` ([`scripts/scan-secrets.js`](scripts/scan-secrets.js)) scans both current files and `git log -p --all` in CI (`fetch-depth: 0`).
 
-### 4. Find the tests that cannot fail
+---
 
-Some tests in `test/contract/` pass on a broken build. Read each one next to the contract:
-*would this go red if the code broke that rule?* Make them strict, in their own commit, and
-push. The PR goes red again, and that is correct: the code breaks its contract in two places.
+## 5. Repository Structure
 
-### 5. Fix the code, not the tests
-
-Hand the two failures to your assistant: *"The contract is right. Fix `src/`. Do not edit
-`test/` or `docs/`."* Then read the diff. Push; the PR goes green; merge it.
-
-Now show that the gate bites. On a new branch, break the contract on purpose (delete the
-check that refuses while reviews are pending), open a PR, and watch the merge stop.
-
-### 6. Add the browser, and get a second reader
-
-- Add a second job to the workflow that runs `npm run e2e`: `npx playwright install --with-deps chromium`
-  first. Make it required too.
-- Give a **second assistant, in a fresh session,** the diff of your deliberate-break PR and
-  the contract. Ask: *"What would you block in this pull request, and why? Quote the line."*
-  Did it catch the break? What did it invent?
-
-## Done means
-
-| # | Check | How | Done when |
-|---|---|---|---|
-| 1 | Nothing swallows a failure | search `.github/workflows/` for `\|\| true` and `continue-on-error` | no match |
-| 2 | CI runs the real gate | open the job log, count the tests | at least 5 unit and 8 contract, the same as on your laptop |
-| 3 | Same Node as the project | the log's `Setup Node` line | 22.13 or newer |
-| 4 | It runs on pull requests | the *Checks* tab of your PR | the `gates` check is there |
-| 5 | A required check | `gh api repos/{owner}/{repo}/branches/main/protection --jq .required_status_checks.contexts` | lists `gates` |
-| 6 | No way round it | `git push origin main` from your laptop | the push is **rejected** |
-| 7 | Red stops the merge | your deliberate-break PR | the merge button is disabled, for you as well, with a red check named |
-| 8 | Refused means nothing changed | your stricter test for *a TA of another class* | it reads `published_at` after the call |
-| 9 | Your tests were not weakened to get green | `git diff <first commit> -- test/` | no assertion was removed or loosened; a removed `try/catch` is fine |
-| 10 | The browser job runs | the `e2e` job in your last PR | green, and required |
-
-## Files
-
-| Path | What it is |
+| Path | Purpose |
 |---|---|
-| `.github/workflows/ci.yml` | the gate. Start here |
-| `docs/contract/publish.md` | the contract. Treat it as correct |
-| `src/app.js` | the routes |
-| `src/grades.js` | pure logic, unit tested |
-| `test/unit/`, `test/contract/`, `e2e/` | the three layers of the pyramid |
+| [`PA2.md`](PA2.md) | Submission index with links to the repo, branch protection, blocked PR, green fix commit, deliberate contract break PR, and `pa2` tag CI run |
+| [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) | Assistant rules file (Stack, Commands, Conventions, Never, and 3-tier permissions) |
+| [`.env.example`](.env.example) | Environment variable template (committed with empty secrets) |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Required GitHub Actions workflows (`gates` and `e2e`) |
+| [`docs/contract/publish.md`](docs/contract/publish.md) | Complete RFC 9457 API contract for `POST /api/labs/{labId}/publish` |
+| [`docs/security/threat-model.md`](docs/security/threat-model.md) | LeeTKOB threat model across roles, sandbox, secrets, supply chain, and prompt injection |
+| [`src/app.js`](src/app.js) | HTTP routes for the TA review queue, review decisions, and grade publishing |
+| [`src/grades.js`](src/grades.js) | Pure grading logic (`markFor` with `FAQ-11` deduplication, `needsReview`) |
+| [`src/config.js`](src/config.js) | Startup config validation and sandbox environment sanitizer (`getSandboxEnv`) |
+| [`src/db.js`](src/db.js) | In-memory SQLite schema and seed data (`node:sqlite` `DatabaseSync`) |
+| [`src/http.js`](src/http.js) | JSON and RFC 9457 `application/problem+json` response helpers |
+| [`test/unit/grades.test.js`](test/unit/grades.test.js) | Unit tests for grading formulas, review queue filtering, and sandbox secret isolation |
+| [`test/contract/publish.contract.test.js`](test/contract/publish.contract.test.js) | HTTP contract tests verifying every status, problem slug, ownership rule, refusal invariant, and idempotency rule in `docs/contract/publish.md` |
+| [`e2e/publish.spec.js`](e2e/publish.spec.js) | Playwright end-to-end test: TA reviews pending violation and publishes grades |
+| [`scripts/scan-secrets.js`](scripts/scan-secrets.js) | Secret scanner over working tree and full git commit history |
+| [`AI-LOG.md`](AI-LOG.md) | Detailed log of AI assistant usage, changes, and rejections |
+| [`SELF_ASSESSMENT_REPORT.md`](SELF_ASSESSMENT_REPORT.md) | Rubric-by-rubric self-assessment with concrete evidence links |

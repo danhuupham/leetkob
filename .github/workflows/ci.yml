@@ -1,20 +1,37 @@
 name: CI
 
 on:
+  pull_request:
   push:
     branches: [main]
+    tags: ['pa2', 'v*']
+
+permissions:
+  contents: read
 
 jobs:
   gates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install
-      - name: Lint
-        run: npm run lint
-        continue-on-error: true
-      - name: Tests
-        run: npm test || true
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run check
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
