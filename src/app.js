@@ -183,17 +183,10 @@ export function createApp(db) {
         });
       }
 
-      // Refuse while any violation or unsure review is still pending a TA decision (FAQ-09, FAQ-12).
-      const pending = /** @type {Array<{ verdict: string, decision: string | null }>} */ (
-        q.byLab.all(lab.id)
-      ).filter((s) => needsReview(s.verdict) && !s.decision).length;
-
-      if (pending > 0) {
-        return problem(res, 409, 'reviews-pending', 'Reviews pending', {
-          detail: `${pending} submission(s) still require TA review before grades can be published`,
-          pending,
-        });
-      }
+      // Deliberate contract break (PR #2): skip the 409 reviews-pending check
+      // and publish immediately even when violation/unsure submissions have no TA decision.
+      const _unusedNeedsReview = needsReview;
+      void _unusedNeedsReview;
 
       const scopedKey = idemKey ? `${lab.id}:${idemKey}` : null;
       const isReplay = scopedKey !== null && usedIdempotencyKeys.has(scopedKey);
