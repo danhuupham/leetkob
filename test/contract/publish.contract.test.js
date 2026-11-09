@@ -45,6 +45,19 @@ test('an unknown Bearer token is 401 and publishes nothing', async () => {
   assert.equal(app.publishedAt(2), null);
 });
 
+test('an Authorization header with wrong scheme (e.g. Basic) is 401 and publishes nothing', async () => {
+  const r = await publish(null, 2, undefined, { authorization: 'Basic tok-ta-b' });
+  assertProblem(r, 401, 'unauthenticated');
+  assert.equal(app.publishedAt(2), null);
+});
+
+test('an unknown /api route is 404 not-found even without a token', async () => {
+  const noAuth = await app.as(null).get('/api/does-not-exist');
+  assertProblem(noAuth, 404, 'not-found');
+  const withAuth = await app.as('admin').post('/api/labs/2/unknown-action');
+  assertProblem(withAuth, 404, 'not-found');
+});
+
 test('a lab that does not exist is 404', async () => {
   assertProblem(await publish('admin', 99), 404, 'not-found');
 });
@@ -74,6 +87,13 @@ test('a TA of another class is 404 and publishes nothing', async () => {
   assert.equal(app.publishedAt(2), null);
 });
 
+test('it refuses with 409 deadline-not-passed when submission deadline is in the future (FAQ-12)', async () => {
+  const r = await publish('ta_b', 3);
+  assertProblem(r, 409, 'deadline-not-passed');
+  assert.equal(r.body.deadlineAt, '2099-12-31 23:59:59');
+  assert.equal(app.publishedAt(3), null);
+});
+
 test('it refuses while reviews are pending', async () => {
   const r = await publish('ta_a', 1);
   assertProblem(r, 409, 'reviews-pending');
@@ -87,7 +107,7 @@ test('malformed JSON in request body is 400 invalid-json and publishes nothing',
   assert.equal(app.publishedAt(2), null);
 });
 
-test('a non-object JSON body or invalid Idempotency-Key is 400 validation and publishes nothing', async () => {
+test('a non-object JSON body or overlong Idempotency-Key is 400 validation and publishes nothing', async () => {
   const badBody = await publish('ta_b', 2, ['not-an-object']);
   assertProblem(badBody, 400, 'validation');
   assert.ok(Array.isArray(badBody.body.errors));
@@ -96,6 +116,13 @@ test('a non-object JSON body or invalid Idempotency-Key is 400 validation and pu
   const longKey = 'k'.repeat(256);
   const badKey = await publish('ta_b', 2, undefined, { 'Idempotency-Key': longKey });
   assertProblem(badKey, 400, 'validation');
+  assert.equal(app.publishedAt(2), null);
+});
+
+test('a whitespace-only Idempotency-Key is 400 validation and publishes nothing', async () => {
+  const wsKey = await publish('ta_b', 2, undefined, { 'Idempotency-Key': '    ' });
+  assertProblem(wsKey, 400, 'validation');
+  assert.ok(Array.isArray(wsKey.body.errors));
   assert.equal(app.publishedAt(2), null);
 });
 
@@ -130,16 +157,50 @@ test('publishing again is safe and does not move the time', async () => {
   assert.equal(again.body.publishedAt, first.body.publishedAt);
 });
 
-test('retrying with Idempotency-Key replays the stored response with Idempotent-Replayed: true', async () => {
+test('retrying with Idempotency-Key replays the stored response (including across authorized staff)', async () => {
   const key = 'publish-lab-2-attempt-01';
   const first = await publish('ta_b', 2, undefined, { 'Idempotency-Key': key });
   assert.equal(first.status, 200);
   assert.equal(first.headers.get('idempotent-replayed'), null);
 
-  const replay = await publish('ta_b', 2, undefined, { 'Idempotency-Key': key });
+  const replaySameUser = await publish('ta_b', 2, undefined, { 'Idempotency-Key': key });
+  assert.equal(replaySameUser.status, 200);
+  assert.equal(replaySameUser.body.publishedAt, first.body.publishedAt);
+  assert.equal(replaySameUser.headers.get('idempotent-replayed'), 'true');
+
+  const replayOtherStaff = await publish('admin', 2, undefined, { 'Idempotency-Key': key });
+  assert.equal(replayOtherStaff.status, 200);
+  assert.equal(replayOtherStaff.body.publishedAt, first.body.publishedAt);
+  assert.equal(replayOtherStaff.headers.get('idempotent-replayed'), 'true');
+});
+
+test('errors are never stored: a 409 with Idempotency-Key can be retried with the same key after review', async () => {
+  const key = 'retry-after-409-key';
+  const refused = await publish('ta_a', 1, undefined, { 'Idempotency-Key': key });
+  assertProblem(refused, 409, 'reviews-pending');
+  assert.equal(app.publishedAt(1), null);
+
+  await app.as('ta_a').post('/api/submissions/1/review', { decision: 'confirm' });
+
+  const firstSuccess = await publish('ta_a', 1, undefined, { 'Idempotency-Key': key });
+  assert.equal(firstSuccess.status, 200);
+  assert.equal(firstSuccess.headers.get('idempotent-replayed'), null);
+
+  const replay = await publish('ta_a', 1, undefined, { 'Idempotency-Key': key });
   assert.equal(replay.status, 200);
-  assert.equal(replay.body.publishedAt, first.body.publishedAt);
+  assert.equal(replay.body.publishedAt, firstSuccess.body.publishedAt);
   assert.equal(replay.headers.get('idempotent-replayed'), 'true');
+});
+
+test('a 500 internal error is RFC 9457 problem+json and leaks no SQL, table name, or stack trace', async () => {
+  app.breakDb();
+  const r = await publish('ta_b', 2);
+  assertProblem(r, 500, 'internal');
+  assert.equal(r.body.detail, 'Something went wrong');
+  assert.doesNotMatch(
+    JSON.stringify(r.body),
+    /SELECT|UPDATE|INSERT|sqlite|labs|submissions|closed|\.js:/i,
+  );
 });
 
 test('problem details never leak SQL queries, table names, or stack traces in detail', async () => {
@@ -147,6 +208,7 @@ test('problem details never leak SQL queries, table names, or stack traces in de
     publish(null, 2),
     publish('stu3', 2),
     publish('ta_a', 2),
+    publish('ta_b', 3),
     publish('ta_a', 1),
   ]);
   for (const r of responses) {

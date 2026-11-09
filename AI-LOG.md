@@ -13,57 +13,56 @@
 
 ---
 
-## 2026-11-09 — Auditing the starter CI workflow and writing `AGENTS.md` & `.github/workflows/ci.yml`
+## Entry 1 · 2026-11-09 — Making `.github/workflows/ci.yml` honest and building the harness (`2e82177`, `79d90f0`, `e45ebdd`)
 Tool: Antigravity (Gemini)
-Asked for: Inspect `.github/workflows/ci.yml`, `package.json`, and `test/contract/publish.contract.test.js` in the starter (`a3e8fd6`), list every way the gate stays green on a broken build, and draft an honest workflow plus `AGENTS.md`, `.env.example`, `src/config.js`, and `scripts/scan-secrets.js`.
+Asked for: Draft an honest GitHub Actions workflow `.github/workflows/ci.yml` running on every pull request and push on Node `22.13.0`, plus `AGENTS.md`, `.env.example`, `src/config.js`, and `scripts/scan-secrets.js`.
 Kept:
-- `.github/workflows/ci.yml` running on `pull_request` and `push` (`main` and `pa2` tag) on Node `22.13.0` with `npm ci`, `npm audit --audit-level=high`, `npm run check` (`gates` job), and Playwright Chromium (`e2e` job).
-- `AGENTS.md` with the four required sections (`Stack`, `Commands`, `Conventions`, `Never`) and three permission tiers (`Allowed`, `Ask First`, `Never`), plus `.env.example` and `src/config.js` (`loadConfig` & `getSandboxEnv`).
+- `.github/workflows/ci.yml` with two required jobs (`gates` running `npm ci`, `npm audit --audit-level=high`, `npm run check`, and `e2e` running Playwright Chromium), `.env.example` (18 variables), `src/config.js` (`loadConfig` & `getSandboxEnv`), and `scripts/scan-secrets.js` scanning both working-tree files and `git log -p --all`.
 Changed:
-- Upgraded `scripts/scan-secrets.js` to run `git log -p --all` (with `fetch-depth: 0` in CI) in addition to scanning working-tree files, and used `fileURLToPath(new URL('..', import.meta.url))` instead of `.pathname` so the scanner works identically on Windows (`C:\...`) and Ubuntu CI (`/home/runner/...`).
-- Added `npm run typecheck` (`tsc --noEmit` with `checkJs: true`, `strict: true` in `tsconfig.json`) so all four required checks — lint, format check, type check, and tests — run via one command locally and in CI.
+- In `scripts/scan-secrets.js`, replaced `new URL('..', import.meta.url).pathname` with `fileURLToPath(new URL('..', import.meta.url))` so the scanner resolves Windows drive paths (`C:\...`) without throwing `ENOENT`.
+- In commit `e45ebdd`, rewrote the assistant's initial 883-word `AGENTS.md` down to a concise 26-line file and updated `src/server.js` and `src/app.js` to import `config` from `src/config.js` at startup instead of reading `process.env.PORT` directly.
 Rejected:
-- **Rejected the starter's silent CI steps (`a3e8fd6`):** Rejected `node-version: 20` (where `node --test "test/unit/**/*.test.js"` could not resolve the quoted glob and passed with 0 tests run), `npm install` (which ignores lockfile drift), `continue-on-error: true` on `npm run lint` (which hid the unused `legacyLimit` variable in `src/http.js:17`), `npm test || true` (which threw away any non-zero exit code), and running only on `push: branches: [main]` (after merge instead of blocking the PR).
-- Rejected creating redundant assistant instruction files (`CLAUDE.md`, `.github/copilot-instructions.md`); consolidated all project rules and permission tiers into `AGENTS.md` alone.
-By hand: Predicted the five starter CI traps before running the assistant, configured GitHub branch protection on `main` (`gates` and `e2e` required, `strict: true`, `enforce_admins: true`, `required_pull_request_reviews` enabled), and verified that `git push origin main` is rejected with `GH006`.
+- **Rejected AI-generated duplicate rules files (`2e82177` → `79d90f0`):** In `2e82177`, the assistant created three separate instruction files (`CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md`). During review in `79d90f0`, we rejected maintaining three files that could drift out of sync and deleted `CLAUDE.md` and `.github/copilot-instructions.md` (`git rm`), keeping `AGENTS.md` as the single source of truth.
+- **Rejected AI-generated verbose rules and uncalled `loadConfig()` (`79d90f0` → `e45ebdd`):** The assistant's first `AGENTS.md` was 883 words of prose and claimed `src/config.js` validated env vars at startup while `src/server.js` still read `process.env.PORT` directly without importing `src/config.js`. We rejected the long prose version and wired `config` into `src/server.js` and `src/app.js`.
+By hand: Audited the starter's `.github/workflows/ci.yml` (`a3e8fd6`) before running the assistant and identified the five reasons it could never fail (`node-version: 20` failing glob discovery with 0 tests run, `npm install`, `continue-on-error: true` hiding `legacyLimit` in `src/http.js:17`, `npm test || true`, and running only on `push` to `main`). Configured branch protection on `main` (`gates` & `e2e` pinned to `app_id: 15368`, `enforce_admins: true`).
 
 ---
 
-## 2026-11-09 — Writing `docs/contract/publish.md` and strict contract tests (`f8f54cb`)
+## Entry 2 · 2026-11-09 — Writing `docs/contract/publish.md` and strict contract tests (`f8f54cb`, `cf5d583`)
 Tool: Antigravity (Gemini)
-Asked for: Expand `docs/contract/publish.md` to match the 5-section structure of `CONTRACT.md` in `IA#3` (`Conventions`, `Errors` as RFC 9457 Problem Details, `Resources`, `Endpoint` with role + ownership matrix, ordered evaluation steps, refusal invariant, and idempotency, plus `Versioning`), and make `test/contract/publish.contract.test.js` strict so every contract violation fails.
+Asked for: Expand `docs/contract/publish.md` to match the 5-section structure of `CONTRACT.md` in `IA#3` and write HTTP contract tests in `test/contract/publish.contract.test.js` covering every rule.
 Kept:
-- `docs/contract/publish.md` defining the complete role and ownership matrix (`401 unauthenticated`, `403 forbidden` for enrolled students of the class, `404 not-found` for TAs and students of other classes to prevent cross-class IDOR enumeration, `409 reviews-pending` with `pending` count, `400 invalid-json`, `400 validation`, and `200 OK` idempotent repeat behavior), aligned with `FAQ-01`, `FAQ-08`, `FAQ-09`, `FAQ-10`, and `FAQ-12`.
-- 16 HTTP contract tests in `test/contract/publish.contract.test.js` and 8 unit tests in `test/unit/grades.test.js` (including `FAQ-11` deduplication of repeated constraint violations and `getSandboxEnv()` secret stripping).
+- `docs/contract/publish.md` (§1 Conventions, §2 RFC 9457 Errors, §3 Resources & Student Visibility Effects per `FAQ-08`/`FAQ-11`/`FAQ-13`, §4 Endpoint Role/Ownership Matrix, Ordered Evaluation Steps, and Idempotency, §5 Versioning) and 22 contract tests in `test/contract/publish.contract.test.js` + 8 unit tests in `test/unit/grades.test.js`.
 Changed:
-- Added explicit `assert.equal(app.publishedAt(2), null)` database reads after every `400`, `401`, `403`, `404`, and `409` refusal test in `test/contract/publish.contract.test.js`.
+- Added `assert.equal(app.publishedAt(lab), null)` after every `400`, `401`, `403`, `404`, and `409` refusal test in `test/contract/publish.contract.test.js`.
+- In `cf5d583`, added contract specification and tests for `409 deadline-not-passed` (`FAQ-12` Condition 1), `500 internal` (`app.breakDb()`), whitespace-only `Idempotency-Key` (`"    "`), wrong `Authorization` scheme (`Basic`), unknown `/api` routes without a token (`404`), and retrying the same `Idempotency-Key` after resolving a `409 reviews-pending`.
 Rejected:
-- **Rejected the `try/catch` wrapper in `test/contract/publish.contract.test.js` (`a3e8fd6` lines 41–49):** The starter test for `'it refuses while reviews are pending'` caught assertion errors and logged `console.log('skipping pending check:', err.message)`, making the test impossible to fail even when `POST /api/labs/1/publish` returned `200 OK` instead of `409`.
-- **Rejected status-only assertions on `403` and `404` refusals (`a3e8fd6` lines 31–38):** Checking `r.status === 403` or `r.status === 404` without reading `app.publishedAt(2)` afterwards allowed a catastrophic bug in `src/app.js` to pass: `q.publish.run(lab.id)` executed *before* `!isStaff(me, lab.class_id)`, so a refused request from a student or another class's TA still published the lab in SQLite!
-By hand: Audited every test in `test/contract/publish.contract.test.js` against `docs/contract/publish.md`, pushed commit `f8f54cb` to PR #1 without touching `src/app.js`, and verified that CI Run `42587382478` went red on the 8 contract violations and blocked merging PR #1 (`mergeStateStatus: BLOCKED`).
+- **Rejected AI-generated process-local `usedIdempotencyKeys = new Set()` (`3e1f53c` → `e45ebdd`):** The assistant initially implemented `Idempotency-Key` tracking in `src/app.js` using an in-memory `Set` and left `Idempotency-Key` scope, TTL, and cross-user behavior unspecified in `docs/contract/publish.md`. We rejected the in-memory `Set` and replaced it with the SQLite `idempotency_keys (lab_id, key, user_id, published_at, created_at)` table in `src/db.js` with a 24-hour window.
+- **Rejected AI-generated auth-before-route check (`3e1f53c` → `e45ebdd`):** In `3e1f53c`, the assistant placed `if (!me) return problem(res, 401, ...)` before route matching, causing unknown `/api` paths without a token to return `401` in violation of `docs/contract/publish.md` §2.2 (`404 not-found`). We rejected that order and moved route matching before `whoIs(req)`.
+By hand: Found the starter's two test holes in `a3e8fd6` (`try/catch` swallowing `409 reviews-pending` on lines 41–49, and status-only `403`/`404` checks missing `q.publish.run` executing before `isStaff`), pushed `f8f54cb` to PR #1, and confirmed CI Run `42587382478` went red on 8 contract tests and blocked the merge.
 
 ---
 
-## 2026-11-09 — Fixing `src/app.js` and diagnosing the Node 22.13 `DatabaseSync` GC bug (`3e1f53c`)
+## Entry 3 · 2026-11-09 — Fixing `src/app.js` and the Node 22.13 `DatabaseSync` V8 GC bug (`3e1f53c`)
 Tool: Antigravity (Gemini)
-Asked for: Fix `src/app.js` and `src/server.js` so that all 16 contract tests, 8 unit tests, ESLint, Prettier, TypeScript `tsc --noEmit`, and the Playwright `e2e` job pass without editing `test/` or `docs/contract/`.
+Asked for: Fix `src/app.js` and `src/server.js` so all contract tests and the Playwright `e2e` job pass without modifying `test/` or `docs/contract/`.
 Kept:
-- Reordered `POST /api/labs/:labId/publish` in `src/app.js` to follow `docs/contract/publish.md` §4.3: (1) authenticate token (`401`), (2) parse positive integer `labId` and look up lab (`404`), (3) verify `isStaff(me, lab.class_id)` (`403` for enrolled students, `404` for everyone else) **before** any write, (4) validate `Idempotency-Key` and JSON body (`400`), (5) check `pending > 0` (`409 reviews-pending` with `{ pending }`), and (6) atomically publish once and replay `Idempotent-Replayed: true` on `Idempotency-Key` retries.
+- Reordering `POST /api/labs/:labId/publish` in `src/app.js` so authentication, `labId` lookup, `isStaff(me, lab.class_id)` ownership, header/body validation, deadline check, and pending-review check all run **before** `q.publish.run(lab.id)`.
 Changed:
-- Rooted the SQLite `DatabaseSync` instance on the HTTP server (`Object.defineProperty(server, '__db', { value: activeDb })` in `src/app.js` and `const db = open();` in `src/server.js`). In CI Run `42586953474` on Node `22.13.0`, passing an unrooted `open()` temporary into `createApp(open())` allowed V8 garbage collection to finalize the underlying `DatabaseSync` connection while `StatementSync` objects were still in use, crashing Playwright `e2e` with `ERR_INVALID_STATE: statement has been finalized`.
+- Rooted the SQLite `DatabaseSync` handle on `server.__db` in `src/app.js` and stored `const db = open();` in `src/server.js`. In CI Run `42586953474` (`2e82177`), passing an unrooted `open()` temporary into `createApp(open())` allowed V8 garbage collection on Node `22.13.0` to finalize `DatabaseSync` while its `StatementSync` prepared statements were still referenced by `handle()`, throwing `ERR_INVALID_STATE: statement has been finalized` during Playwright `e2e`.
 Rejected:
-- Rejected the assistant's initial suggestion to use `db.exec(...)` string interpolation for queries instead of prepared statements; keeping `StatementSync` prepared statements and rooting `db` on `server.__db` fixed the GC lifecycle issue while preserving parameterized SQL safety.
-By hand: Verified `git diff f8f54cb..3e1f53c -- test/ docs/contract/` was completely empty, pushed `3e1f53c` to PR #1, confirmed CI Run `42587620425` passed both `gates` and `e2e`, and merged PR #1 into `main` (`45abf32`).
+- **Rejected AI suggestion to replace prepared statements with `db.exec()` string interpolation:** When diagnosing `ERR_INVALID_STATE: statement has been finalized`, the assistant initially suggested replacing `db.prepare(...)` calls with per-request `db.exec(...)` SQL strings. We rejected string-interpolated SQL and instead rooted `db` on `server.__db` to keep parameterized prepared statements alive.
+By hand: Verified `git diff f8f54cb..3e1f53c -- test/ docs/contract/` was empty, pushed `3e1f53c`, verified CI Run `42587620425` turned green on both `gates` and `e2e`, and merged PR #1 (`45abf32`).
 
 ---
 
-## 2026-11-09 — Deliberate contract break (`PR #2`, `8168045`) and second-reader AI review
+## Entry 4 · 2026-11-09 — Deliberate contract break (`PR #2`, `8168045`) and second-reader AI review
 Tool: Antigravity (Gemini — fresh `research` subagent session for second-reader review)
-Asked for: In a fresh session with only `docs/contract/publish.md` and the git diff of PR #2 (`8168045`), answered: *"What would you block in this pull request, and why? Quote the line."*
+Asked for: In a fresh session given only `docs/contract/publish.md` and the git diff of PR #2 (`8168045`), answered: *"What would you block in this pull request, and why? Quote the line."*
 Kept:
-- The second reader's exact block verdict posted on [PR #2 comment](https://github.com/danhuupham/leetkob/pull/2#issuecomment-6735900071), quoting the deleted `if (pending > 0) { return problem(res, 409, 'reviews-pending', ...); }` lines in `src/app.js` and citing `docs/contract/publish.md` §4.3 Step 5 (line 133), §2.2 (line 58), and §4.1 (lines 87, 99–102).
+- The second reader's block review ([PR #2 comment](https://github.com/danhuupham/leetkob/pull/2#issuecomment-6735900071)) quoting the deleted `if (pending > 0)` check in `src/app.js` and citing `docs/contract/publish.md` §4.3 Step 5 (`409 reviews-pending`), §2.2, and §4.1.
 Changed:
-- Kept `_unusedNeedsReview` referenced with `void` in `8168045` so that ESLint, Prettier, TypeScript, and unit tests all passed in CI Run `42588038582`, isolating the failure exclusively to `npm run contract` (`✖ it refuses while reviews are pending — 200 !== 409`).
+- Kept `needsReview` referenced via `void` in `8168045` so ESLint, Prettier, TypeScript, and unit tests all passed in CI Run `42588038582`, isolating the red failure strictly to `npm run contract` (`✖ it refuses while reviews are pending — 200 !== 409`).
 Rejected:
-- The second reader also claimed the diff violated §5 (`Breaking Changes Require /api/v2`). While true at a policy level, `8168045` was an implementation bug against the v1 contract rather than an intentional schema migration; the primary contract violation is §4.3 Step 5 (`409 reviews-pending`).
-By hand: Created branch `test/deliberate-contract-break`, opened PR #2 (`https://github.com/danhuupham/leetkob/pull/2`), verified CI Run `42588038582` failed on `gates` and blocked merging even with `gh pr merge 2 --admin` (`GraphQL: Required status check "gates" is failing`), and left PR #2 open as live evidence.
+- **Rejected the second reader's false alarm on §5 (`/api/v2` versioning):** The second reader also claimed removing the `409` check required bumping the route path to `/api/v2/labs/{labId}/publish` under §5. We rejected that framing because publishing without TA review violates LeeTKOB's core human-gate invariant (`FAQ-12`) in any version, not a v2 migration.
+By hand: Opened PR #2 (`https://github.com/danhuupham/leetkob/pull/2`), confirmed CI Run `42588038582` failed on `gates` and blocked merging even with `--admin` (`GraphQL: Required status check "gates" is failing`), and left PR #2 open as permanent evidence.
