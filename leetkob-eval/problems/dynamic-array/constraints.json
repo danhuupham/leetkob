@@ -1,0 +1,17 @@
+[
+  {
+    "id": "C1",
+    "text": "Do not use any of these standard containers: `std::vector`, `std::deque`, `std::list`, `std::forward_list`, `std::array`, `std::basic_string`, `std::string`, `std::stack`, `std::queue`, `std::valarray`.",
+    "deduction": 4
+  },
+  {
+    "id": "C2",
+    "text": "Store the numbers in memory you allocate yourself (`new[]`, or `malloc`/`realloc`) and grow the block when it is full, so that memory use follows the actual input size. A fixed-size array, or a single allocation sized for the largest possible input, does not satisfy this constraint.",
+    "deduction": 3
+  },
+  {
+    "id": "C3",
+    "text": "Release every block you allocate: when the array grows, the old block is freed (or `realloc` is used), and the last block is freed before the program ends (a destructor that frees it counts). A program that allocates nothing passes this constraint.",
+    "deduction": 1
+  }
+]

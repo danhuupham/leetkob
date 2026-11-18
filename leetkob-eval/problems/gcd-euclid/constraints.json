@@ -1,0 +1,12 @@
+[
+  {
+    "id": "C1",
+    "text": "Do not use a library gcd/lcm function: `std::gcd`, `std::lcm`, `__gcd`, `std::__gcd`, `boost::integer::gcd`, `boost::integer::lcm`.",
+    "deduction": 3
+  },
+  {
+    "id": "C2",
+    "text": "Compute the gcd with Euclid's algorithm written by you (repeated remainder or repeated subtraction, iterative or recursive). Calling a library function, trial division, prime factorisation or any other method does not satisfy this constraint, whatever the function is called.",
+    "deduction": 3
+  }
+]

@@ -1,0 +1,12 @@
+[
+  {
+    "id": "C1",
+    "text": "Do not use `std::reverse`, `std::reverse_copy`, `std::ranges::reverse`, `std::ranges::reverse_copy`, or reverse iterators (`rbegin`, `rend`, `crbegin`, `crend`, `std::reverse_iterator`, `std::make_reverse_iterator`).",
+    "deduction": 3
+  },
+  {
+    "id": "C2",
+    "text": "Reverse each word in place, inside the string that holds it. Do not build the reversed word in a second string, character array, stack or any other buffer.",
+    "deduction": 3
+  }
+]
