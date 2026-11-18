@@ -77,7 +77,8 @@ Rubrics for `PA#3` (Criterion 7) and `PA#4` (Criteria 1 & 3) explicitly grade co
 Run locally before every `git push`:
 
 ```bash
-npm run check     # ESLint + Prettier + tsc --noEmit + unit + contract + whole-history secret scan
+npm run format    # Auto-format modified JS/JSON/YAML files (never touches leetkob-eval/)
+npm run check     # ESLint + Prettier + tsc --noEmit + unit + contract + secret scan + eval SHA-256
 npm run e2e       # Required whenever src/app.js, src/http.js, or public/ changes
 ```
 
