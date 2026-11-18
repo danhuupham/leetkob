@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const SKIP = new Set(['.git', 'node_modules', 'test', 'playwright-report', 'test-results']);
+const SKIP = new Set(['.git', 'node_modules', 'test', 'playwright-report', 'test-results', 'data']);
+const FORBIDDEN_TRACKED = new Set(['.env', 'marking.env', 'ACCESS.md']);
 
 /** @type {Array<[string, RegExp]>} */
 const RULES = [
@@ -46,9 +47,37 @@ export function scan(root = ROOT) {
   /** @type {Array<{ source: string, line: number, rule: string }>} */
   const findings = [];
 
-  for (const filePath of walkFiles(root)) {
+  /** @type {string[] | null} */
+  let candidateFiles = null;
+  try {
+    const trackedOut = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
+    for (const rel of trackedOut.split('\n').filter(Boolean)) {
+      if (FORBIDDEN_TRACKED.has(rel) || rel.endsWith('.env')) {
+        findings.push({ source: rel, line: 1, rule: 'Forbidden env/access file tracked in git' });
+      }
+    }
+    const visibleOut = execFileSync(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard'],
+      { cwd: root, encoding: 'utf8' },
+    );
+    candidateFiles = visibleOut
+      .split('\n')
+      .filter((rel) => rel && !rel.startsWith('test/'))
+      .map((rel) => join(root, rel));
+  } catch {
+    candidateFiles = null;
+  }
+
+  for (const filePath of candidateFiles ?? walkFiles(root)) {
+    let content;
+    try {
+      if (!statSync(filePath).isFile()) continue;
+      content = readFileSync(filePath, 'utf8');
+    } catch {
+      continue;
+    }
     const relPath = relative(root, filePath);
-    const content = readFileSync(filePath, 'utf8');
     content.split('\n').forEach((line, idx) => {
       for (const [rule, regex] of RULES) {
         if (regex.test(line)) {

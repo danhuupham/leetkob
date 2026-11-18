@@ -1,4 +1,4 @@
-# LeeTKOB — Harness, Quality Gate & Endpoint Contract (`PA#2`)
+# LeeTKOB — C++ Lab Constraint Review, Sandbox Judge & Grade Publishing
 
 **Course:** CSC13114 — Advanced Web Application Development · HK1 2026–2027  
 **Team Members:**
@@ -6,9 +6,17 @@
 - `21120595` — Nguyễn Thành Vinh
 - `23120256` — Trần Đại Hiệp
 
-**LeeTKOB** helps teaching assistants (TAs) verify, with line-level evidence, that Accepted C++ lab submissions follow the assignment's algorithmic and syntax constraints before marks are published (`FAQ-01`–`FAQ-14`).
+**LeeTKOB** helps teaching assistants (TAs) judge C++ lab submissions in an isolated sandbox and verify, with line-level evidence, that Accepted submissions satisfy the assignment's algorithmic and syntax constraints before marks are published (`FAQ-01`–`FAQ-14`).
 
-This repository contains the **project harness**, **enforced CI quality gate**, **TA review queue & grade publishing slice**, and the **executable API contract** for `POST /api/labs/{labId}/publish` ([`docs/contract/publish.md`](docs/contract/publish.md)). See [`PA2.md`](PA2.md) for direct links to the protected `main` branch, blocked red PRs, green fix commits, deliberate contract break PR, and `pa2` tag CI run.
+### Milestone Index
+
+| Milestone | Tag | Submission Index & Evidence |
+|---|---|---|
+| **`PA#2`** — Harness, Quality Gate & Endpoint Contract | [`pa2`](https://github.com/danhuupham/leetkob/tree/pa2) | [`PA2.md`](PA2.md) · [`docs/contract/publish.md`](docs/contract/publish.md) · [`docs/assessments/PA2-SELF_ASSESSMENT_REPORT.md`](docs/assessments/PA2-SELF_ASSESSMENT_REPORT.md) |
+| **`PA#3`** — Prototype with the LLM Feature Running | `pa3` *(upcoming)* | `PA3.md` *(in progress)* |
+| **`PA#4`** — Eval Gate, Guardrails, Human Gate & Red-Team | `pa4` *(upcoming)* | `PA4.md` *(planned)* |
+| **`PA#5`** — Final Build, Observability & 80-User Load Test | `pa5` *(upcoming)* | `PA5.md` *(planned)* |
+| **`PA#6`** — Final Demo & Individual Oral | `pa5` | `OWNERS.md` *(planned)* |
 
 ---
 
@@ -69,10 +77,11 @@ In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2` Rubric (Criter
 
 ---
 
-## 4. Assistant Rules, Permissions & Secrets
+## 4. Team Workflow, Assistant Rules & Secrets
 
-- **Rules File:** [`AGENTS.md`](AGENTS.md) (26 lines) defines our **Stack**, **Commands**, **Conventions**, **Never** rules, and **Three-Tier Permissions** (`Allowed`, `Ask First`, `Never`).
-- **Environment Template:** [`.env.example`](.env.example) documents all 18 configuration variables without secret values. `.env` is ignored by [`.gitignore`](.gitignore).
+- **Team Workflow & Git Rules:** [`CONTRIBUTING.md`](CONTRIBUTING.md) defines per-member Git authorship (`<StudentID>@student.hcmus.edu.vn` for `PA#6`), one-part-per-PR TDD commit discipline, protected-path review rules, real-time `AI-LOG.md` logging, and production freeze protocols.
+- **Assistant Rules File:** [`AGENTS.md`](AGENTS.md) defines our **Stack**, **Commands**, **Conventions & Team Workflow**, **Never** rules, and **Three-Tier Permissions** (`Allowed`, `Ask First`, `Never`).
+- **Environment Template:** [`.env.example`](.env.example) documents all 18 configuration variables without secret values. `.env`, `marking.env`, and `ACCESS.md` are ignored by [`.gitignore`](.gitignore).
 - **Startup Validation & Sandbox Isolation:** [`src/config.js`](src/config.js) validates all environment variables once at startup (`loadConfig()`, imported by [`src/server.js`](src/server.js) and [`src/app.js`](src/app.js)) and provides `getSandboxEnv()`, which strips `MODEL_API_KEY`, `SESSION_SECRET`, and all host environment variables before spawning the C++ judge sandbox.
 - **Whole-History Secret Scanning:** `npm run scan` ([`scripts/scan-secrets.js`](scripts/scan-secrets.js)) scans both current files and `git log -p --all` in CI (`fetch-depth: 0`).
 
@@ -82,10 +91,12 @@ In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2` Rubric (Criter
 
 | Path | Purpose |
 |---|---|
-| [`PA2.md`](PA2.md) | Submission index with links to the repo, branch protection, blocked PR, green fix commit, deliberate contract break PR, and `pa2` tag CI run |
-| [`AGENTS.md`](AGENTS.md) | Concise 26-line assistant rules file (Stack, Commands, Conventions, Never, and 3-tier permissions) |
+| [`PA2.md`](PA2.md) | `PA#2` submission index (protected `main`, blocked PR, green fix commit, deliberate contract break PR, `pa2` tag CI run) |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Team collaboration rules: Git authorship, 1-part-per-PR TDD workflow, `CODEOWNERS`, oral-readiness gate, and deployment freeze |
+| [`AGENTS.md`](AGENTS.md) | Concise assistant rules file (Stack, Commands, Conventions, Never, and 3-tier permissions) |
 | [`.env.example`](.env.example) | Environment variable template (18 variables committed with empty secrets) |
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Required GitHub Actions workflows (`gates` and `e2e`) |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Required GitHub Actions workflows (`gates` and `e2e`) across PRs, `main`, and `pa*` tags |
+| [`.github/CODEOWNERS`](.github/CODEOWNERS) | Code-owner review protection for `docs/contract/`, `test/`, `e2e/`, `eval/`, `.github/`, and `AGENTS.md` |
 | [`docs/contract/publish.md`](docs/contract/publish.md) | Complete RFC 9457 API contract for `POST /api/labs/{labId}/publish` |
 | [`docs/security/threat-model.md`](docs/security/threat-model.md) | LeeTKOB threat model across roles, sandbox, secrets, supply chain, and prompt injection |
 | [`src/app.js`](src/app.js) | HTTP routes for the TA review queue, review decisions, and grade publishing |
