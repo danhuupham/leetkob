@@ -13,10 +13,10 @@
 | Milestone | Tag | Submission Index & Evidence |
 |---|---|---|
 | **`PA#2`** — Harness, Quality Gate & Endpoint Contract | [`pa2`](https://github.com/danhuupham/leetkob/tree/pa2) | [`PA2.md`](PA2.md) · [`docs/contract/publish.md`](docs/contract/publish.md) · [`docs/assessments/PA2-SELF_ASSESSMENT_REPORT.md`](docs/assessments/PA2-SELF_ASSESSMENT_REPORT.md) |
-| **`PA#3`** — Prototype with the LLM Feature Running | `pa3` *(upcoming)* | `PA3.md` *(in progress)* |
-| **`PA#4`** — Eval Gate, Guardrails, Human Gate & Red-Team | `pa4` *(upcoming)* | `PA4.md` *(planned)* |
-| **`PA#5`** — Final Build, Observability & 80-User Load Test | `pa5` *(upcoming)* | `PA5.md` *(planned)* |
-| **`PA#6`** — Final Demo & Individual Oral | `pa5` | `OWNERS.md` *(planned)* |
+| **`PA#3`** — Prototype with the LLM Feature Running | `pa3` *(upcoming)* | [`docs/plans/PA3-Plan.md`](docs/plans/PA3-Plan.md) (`PA3.md` at submission) |
+| **`PA#4`** — Eval Gate, Guardrails, Human Gate & Red-Team | `pa4` *(upcoming)* | [`docs/plans/PA4-Plan.md`](docs/plans/PA4-Plan.md) (`PA4.md` at submission) |
+| **`PA#5`** — Final Build, Observability & 80-User Load Test | `pa5` *(upcoming)* | [`docs/plans/PA5-Plan.md`](docs/plans/PA5-Plan.md) (`PA5.md` at submission) |
+| **`PA#6`** — Final Demo & Individual Oral | `pa5` | [`docs/plans/PA6-Plan.md`](docs/plans/PA6-Plan.md) (`OWNERS.md` at submission) |
 
 ---
 
@@ -60,7 +60,8 @@ Every check runs with one documented command locally and in GitHub Actions (`.gi
 | **Unit tests** | `npm test` | `node --test --test-reporter=spec "test/unit/**/*.test.js"` (8 unit tests) |
 | **Contract tests** | `npm run contract` | `node --test --test-reporter=spec "test/contract/**/*.test.js"` (22 contract tests) |
 | **Secret scan (tree + history)** | `npm run scan` | `node scripts/scan-secrets.js` (scans working tree & `git log -p --all`) |
-| **All synchronous gates** | `npm run check` | Runs `lint` + `format:check` + `typecheck` + `test` + `contract` + `scan` |
+| **Eval dataset SHA-256 check** | `npm run verify:eval` | `node scripts/verify-eval.js` (verifies byte-for-byte SHA-256 of `leetkob-eval/`) |
+| **All synchronous gates** | `npm run check` | Runs `lint` + `format:check` + `typecheck` + `test` + `contract` + `scan` + `verify:eval` |
 | **End-to-end browser gate** | `npm run e2e` | `playwright test` (`e2e/publish.spec.js` in Chromium; requires `npx playwright install chromium`) |
 
 ---
@@ -96,7 +97,10 @@ In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2` Rubric (Criter
 | [`AGENTS.md`](AGENTS.md) | Concise assistant rules file (Stack, Commands, Conventions, Never, and 3-tier permissions) |
 | [`.env.example`](.env.example) | Environment variable template (18 variables committed with empty secrets) |
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Required GitHub Actions workflows (`gates` and `e2e`) across PRs, `main`, and `pa*` tags |
-| [`.github/CODEOWNERS`](.github/CODEOWNERS) | Code-owner review protection for `docs/contract/`, `test/`, `e2e/`, `eval/`, `.github/`, and `AGENTS.md` |
+| [`.github/CODEOWNERS`](.github/CODEOWNERS) | Code-owner review protection for `docs/contract/`, `test/`, `e2e/`, `leetkob-eval/`, `eval/`, `.github/`, and `AGENTS.md` |
+| [`leetkob-eval/`](leetkob-eval/README.md) | Published read-only C++ dev set (`47` solutions, `102` pairs), `labels.jsonl`, and `eval.mjs` (locked with `-text` in `.gitattributes`) |
+| [`docs/plans/`](docs/plans/MASTER-PLAN.md) | Shared team implementation plans (`MASTER-PLAN.md`, `PA3-Plan.md`–`PA6-Plan.md`) |
+| [`docs/reference/`](docs/reference/FAQ.md) | LeeTKOB Class Brief (`BRIEF.md`) and Product Owners' FAQ (`FAQ.md`) |
 | [`docs/contract/publish.md`](docs/contract/publish.md) | Complete RFC 9457 API contract for `POST /api/labs/{labId}/publish` |
 | [`docs/security/threat-model.md`](docs/security/threat-model.md) | LeeTKOB threat model across roles, sandbox, secrets, supply chain, and prompt injection |
 | [`src/app.js`](src/app.js) | HTTP routes for the TA review queue, review decisions, and grade publishing |

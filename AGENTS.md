@@ -5,7 +5,7 @@
 - LLM (`PA#3`+): Gemini 2.5 Flash on server only (`$0.25/lab` cap, `$5/month` provider cap). Sandbox: Docker (`g++ -std=c++17 -O2`, `--network none`, `--user 65534:65534`, `--read-only`).
 
 ## Commands
-- `npm ci` · `npm start` · `npm run lint` · `npm run format:check` · `npm run typecheck` · `npm test` · `npm run contract` · `npm run scan` · `npm run check` · `npm run e2e`
+- `npm ci` · `npm start` · `npm run lint` · `npm run format:check` · `npm run typecheck` · `npm test` · `npm run contract` · `npm run scan` · `npm run verify:eval` · `npm run check` · `npm run e2e`
 
 ## Conventions & Team Workflow
 - Named exports only; validate env once at startup in `src/config.js` and never read `process.env` in `src/server.js` or `src/app.js`.
@@ -24,5 +24,5 @@
 
 ## Permissions
 - **Allowed:** Read tracked files; edit `src/` and `public/`; run `npm run check`, `npm run e2e`, `git status`, `git diff`, `git log`.
-- **Ask First:** Edit `docs/contract/`, `test/`, `e2e/`, `eval/`, `.github/workflows/`, `src/db.js`, `.env.example`, or `package.json`; open/merge PRs; run live LLM evals.
+- **Ask First:** Edit `docs/contract/`, `test/`, `e2e/`, `leetkob-eval/`, `eval/`, `.github/workflows/`, `src/db.js`, `.env.example`, or `package.json`; open/merge PRs; run live LLM evals.
 - **Never:** Read/commit `.env`, `marking.env`, `ACCESS.md`, or live keys; expose secrets/network to the C++ sandbox; push straight to `main`; weaken tests, contracts, or eval labels.

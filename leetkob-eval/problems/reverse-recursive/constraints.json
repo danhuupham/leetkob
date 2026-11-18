@@ -1,0 +1,12 @@
+[
+  {
+    "id": "C1",
+    "text": "Do not use loop statements: `for`, `while`, `do`-`while`, range-based `for`, or `goto`. All repetition must come from recursion.",
+    "deduction": 4
+  },
+  {
+    "id": "C2",
+    "text": "Do not use a library facility that iterates for you: `std::accumulate`, `std::reduce`, `std::reverse`, `std::reverse_copy`, `std::for_each`, `std::copy`, `std::transform`, `std::istream_iterator`, `std::ostream_iterator`, `rbegin`, `rend`.",
+    "deduction": 3
+  }
+]

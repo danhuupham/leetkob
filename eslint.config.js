@@ -1,5 +1,8 @@
 export default [
   {
+    ignores: ['leetkob-eval/**'],
+  },
+  {
     files: ['**/*.js'],
     languageOptions: {
       ecmaVersion: 2023,
