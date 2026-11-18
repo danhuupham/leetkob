@@ -99,3 +99,20 @@ Rejected:
 - **Rejected keeping `gemini-2.5-flash`:** Checking Google AI Studio's official model lifecycle documentation revealed `gemini-2.5-flash` is deprecated and shuts down API access on **December 1, 2026** — the exact day before the `PA#4` deadline (December 2, 2026). Switched proactively to `gemini-3.8-flash`.
 - **Rejected creating empty placeholder files for `sandbox/`, `checker/`, and `worker.js` during refactoring:** `PA#3` Rubric Criterion 7 grades one subsystem per commit with tests landing no later than implementation; pre-creating empty stubs now would muddy commit attribution.
 By hand: Verified `git diff main -- test/ e2e/ docs/contract/ leetkob-eval/` is completely empty and confirmed all 8 unit tests, 22 contract tests, and Playwright `e2e` pass.
+
+---
+
+## Entry 7 · 2026-11-18 — Task `T3.3`: 1:1 line-preserving C++17 sanitizer & syntax-aware ban-list hard rules (`ecc4a32`, `1a8de33`)
+Tool: Antigravity (Gemini)
+Asked for: Implement `PA#3` Task `T3.3` test-first on branch `feat/pa3-hard-rules`: `test/unit/hard-rules.test.js` (`AC1`–`AC6`), `src/checker/sanitize.js` (`sanitizeCode`), and `src/checker/hard-rules.js` (`parseBanListConstraint`, `evaluateHardRule`).
+Kept:
+- `test/unit/hard-rules.test.js` committed first (`ecc4a32`) before any implementation file, covering comment/spliced-comment/raw-string traps (`AC1`), user-defined functions/namespaces/structs & member `.find` traps (`AC2`), `<algorithm>` header swap-only trap (`AC3`), `using namespace`, namespace aliases, `#define` macros, `typedef`/`using` aliases (`AC4`), loop keywords (`AC5`), and full `leetkob-eval` verification (`AC6`: `0` wrongful deductions and `100%` recall across all ban-list pairs).
+- `src/checker/sanitize.js` guaranteeing `originalLines.length === strippedLines.length` across multi-line block comments, backslash-spliced `//` comments, C++17 `R"delim(...)delim"` raw string literals, and student PII scrubbing.
+- `src/checker/hard-rules.js` (`1a8de33`) implementing C++17 lexical, `#include`/`#define` (`##` token-pasting), nested scope, `using`, alias, and arity-aware user-declaration resolution with zero dev-set problem IDs.
+Changed:
+- In `src/checker/hard-rules.js` (`isShadowedByUserSymbol`), the assistant initially skipped `cur.userVars` and `cur.userTypes` whenever `cur.aliases.has(name)` was true; because every `=` variable initializer (`int rend = 0;`) recorded an entry in `scope.aliases`, `AC2` failed by flagging `+ rend` as banned `rend`. Since `scanTokensForTarget` already evaluates `lookupAlias` before checking shadowing, we removed the `!cur.aliases.has(name)` guard so non-tainted local variables like `int rend = 0;` properly shadow unqualified `rend` without modifying `test/unit/hard-rules.test.js`. Also removed an unused `aDepth` counter caught by ESLint (`prefer-const`).
+- Scoped 7–10 digit PII scrubbing in `src/checker/sanitize.js` to preserve `[10000005]` array bounds and standard competitive-programming constants (`1000000007`, `998244353`) outside string literals so fixed-size array capacities remain visible to semantic checks.
+Rejected:
+- **Rejected bundling `web-tree-sitter` + `.wasm` binary in `package.json`:** Adding a runtime WASM parser dependency risked path-resolution failures inside `Dockerfile.checker` (`--network none` build/run) and added opaque Emscripten glue harder to trace line-by-line in the `PA#6` oral defense. Implemented a pure-JS C++17 lexer and lexical-scope resolver with `0` runtime npm dependencies instead.
+- **Rejected naive `'` character-literal lexing and empty-backtick ban-list matching:** Treating every `'` as opening a character literal breaks C++14 digit separators (`const int MAX_VAL = 1'000'000;`), and classifying `"Do not use ..."` prose without backticks as a ban-list rule would return `pass` with an empty target list instead of routing to the semantic model. Handled `pp-number` digit separators and required `bannedTargets.length > 0`.
+By hand: Verified `git diff ecc4a32..1a8de33 -- test/` is empty (0 bytes loosened in tests), verified zero dev-set IDs in `src/`, and confirmed `npm run check` (16/16 unit, 22/22 contract) and `npm run e2e` pass.
