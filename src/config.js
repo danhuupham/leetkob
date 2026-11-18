@@ -15,7 +15,7 @@ export function loadConfig(env = process.env) {
     throw new Error(`Invalid PORT: ${env.PORT}`);
   }
 
-  const modelMaxCostUsdPerLab = Number(env.MODEL_MAX_COST_USD_PER_LAB || 0.25);
+  const modelMaxCostUsdPerLab = Number(env.MODEL_MAX_COST_USD_PER_LAB || 0.5);
   if (
     !Number.isFinite(modelMaxCostUsdPerLab) ||
     modelMaxCostUsdPerLab <= 0 ||
@@ -53,7 +53,7 @@ export function loadConfig(env = process.env) {
     databaseUrl: env.DATABASE_URL || ':memory:',
     sessionSecret,
     modelProvider: env.MODEL_PROVIDER || 'gemini',
-    modelName: env.MODEL_NAME || 'gemini-2.5-flash',
+    modelName: env.MODEL_NAME || 'gemini-3.8-flash',
     modelApiKey,
     modelMaxCostUsdPerLab,
     modelTimeoutMs: Number(env.MODEL_TIMEOUT_MS || 10000),

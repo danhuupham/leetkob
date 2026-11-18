@@ -1,15 +1,16 @@
 import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// An in-memory database, created and seeded on every start.
-//
+const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', import.meta.url));
+
+// Default reference accounts for local development and automated tests:
 //   class 1  TA: ta_a  students: stu1, stu2
-//     lab 1 (deadline passed)
-//       submission 1  stu1  violation  not reviewed yet  -> lab 1 cannot be published yet (409 reviews-pending)
-//       submission 2  stu2  pass       needs no review
+//     lab 1 (deadline passed): submission 1 violation (unreviewed), submission 2 pass
 //   class 2  TA: ta_b  students: stu3
-//     lab 2 (deadline passed)
-//       submission 3  stu3  violation  already reviewed  -> lab 2 can be published
-//     lab 3 (deadline in future: 2099-12-31 23:59:59)    -> lab 3 cannot be published yet (409 deadline-not-passed)
+//     lab 2 (deadline passed): submission 3 violation (confirmed)
+//     lab 3 (deadline in future: 2099-12-31 23:59:59)
 //   admin: every class
 export const USERS = [
   { id: 1, name: 'admin', role: 'admin', token: 'tok-admin' },
@@ -20,42 +21,97 @@ export const USERS = [
   { id: 6, name: 'stu3', role: 'student', token: 'tok-stu3' },
 ];
 
-const SCHEMA = `
-CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
-  role TEXT NOT NULL CHECK (role IN ('admin','ta','student')), token TEXT NOT NULL UNIQUE);
-CREATE TABLE class_staff (class_id INTEGER NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id),
-  PRIMARY KEY (class_id, user_id));
-CREATE TABLE enrollments (class_id INTEGER NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id),
-  PRIMARY KEY (class_id, user_id));
-CREATE TABLE labs (id INTEGER PRIMARY KEY, class_id INTEGER NOT NULL, title TEXT NOT NULL,
-  deadline_at TEXT NOT NULL DEFAULT '2026-11-01 00:00:00', published_at TEXT);
-CREATE TABLE submissions (id INTEGER PRIMARY KEY, lab_id INTEGER NOT NULL REFERENCES labs(id),
-  student_id INTEGER NOT NULL REFERENCES users(id),
-  verdict TEXT NOT NULL CHECK (verdict IN ('pass','violation','unsure')),
-  decision TEXT CHECK (decision IN ('confirm','overturn')));
-CREATE TABLE idempotency_keys (lab_id INTEGER NOT NULL REFERENCES labs(id),
-  key TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id),
-  published_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  PRIMARY KEY (lab_id, key));
-`;
-
-export function open() {
-  const db = new DatabaseSync(':memory:');
-  db.exec('PRAGMA foreign_keys = ON;');
-  db.exec(SCHEMA);
-  const u = db.prepare('INSERT INTO users (id, name, role, token) VALUES (?, ?, ?, ?)');
-  for (const x of USERS) u.run(x.id, x.name, x.role, x.token);
+/**
+ * Applies pending SQL migrations in alphabetical order.
+ * @param {DatabaseSync} db
+ * @returns {string[]} Applied migration filenames
+ */
+export function migrate(db) {
   db.exec(`
-    INSERT INTO class_staff VALUES (1, 2), (2, 3);
-    INSERT INTO enrollments VALUES (1, 4), (1, 5), (2, 6);
-    INSERT INTO labs (id, class_id, title, deadline_at) VALUES
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      filename TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  const applied = new Set(
+    /** @type {Array<{ filename: string }>} */ (
+      db.prepare('SELECT filename FROM schema_migrations').all()
+    ).map((r) => r.filename),
+  );
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
+  const markApplied = db.prepare('INSERT INTO schema_migrations (filename) VALUES (?)');
+  /** @type {string[]} */
+  const newlyApplied = [];
+
+  for (const file of files) {
+    if (applied.has(file)) continue;
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      db.exec(sql);
+      markApplied.run(file);
+      db.exec('COMMIT;');
+      newlyApplied.push(file);
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+  }
+  return newlyApplied;
+}
+
+/**
+ * Idempotently seeds reference users, classes, labs, and submissions.
+ * @param {DatabaseSync} db
+ */
+export function seedDemoData(db) {
+  const insertUser = db.prepare(
+    'INSERT OR IGNORE INTO users (id, name, role, token) VALUES (?, ?, ?, ?)',
+  );
+  for (const u of USERS) insertUser.run(u.id, u.name, u.role, u.token);
+
+  db.exec(`
+    INSERT OR IGNORE INTO class_staff VALUES (1, 2), (2, 3);
+    INSERT OR IGNORE INTO enrollments VALUES (1, 4), (1, 5), (2, 6);
+    INSERT OR IGNORE INTO labs (id, class_id, title, deadline_at) VALUES
       (1, 1, 'Merge sort', '2026-11-01 00:00:00'),
       (2, 2, 'Merge sort', '2026-11-01 00:00:00'),
       (3, 2, 'Binary search', '2099-12-31 23:59:59');
-    INSERT INTO submissions VALUES
+    INSERT OR IGNORE INTO submissions VALUES
       (1, 1, 4, 'violation', NULL),
       (2, 1, 5, 'pass', NULL),
       (3, 2, 6, 'violation', 'confirm');
   `);
+}
+
+/**
+ * Opens a SQLite database connection. In-memory databases are migrated and seeded
+ * automatically for test/dev ergonomics; file-backed databases enable WAL + busy_timeout
+ * and rely on explicit `npm run migrate` (Session 8 container lifecycle rule).
+ *
+ * @param {string} [databaseUrl]
+ * @param {{ migrateOnOpen?: boolean, seed?: boolean }} [options]
+ * @returns {DatabaseSync}
+ */
+export function open(databaseUrl = ':memory:', options = {}) {
+  const isMemory = databaseUrl === ':memory:';
+  if (!isMemory) {
+    mkdirSync(dirname(databaseUrl), { recursive: true });
+  }
+  const db = new DatabaseSync(databaseUrl);
+  db.exec('PRAGMA foreign_keys = ON;');
+  if (!isMemory) {
+    db.exec('PRAGMA journal_mode = WAL;');
+    db.exec('PRAGMA busy_timeout = 5000;');
+  }
+  if (options.migrateOnOpen ?? isMemory) {
+    migrate(db);
+  }
+  if (options.seed ?? isMemory) {
+    seedDemoData(db);
+  }
   return db;
 }

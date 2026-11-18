@@ -7,9 +7,9 @@
 - `23120256` — Trần Đại Hiệp
 
 **LLM Feature Data & Cost Declaration (AI-LOG Rule #6 & Brief §3, §5):**
-- **Model & Provider:** Google Gemini `gemini-2.5-flash` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-2.5-flash`), called exclusively from the server.
+- **Model & Provider:** Google Gemini `gemini-3.8-flash` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-3.8-flash`; migrated from `gemini-2.5-flash` ahead of its December 1, 2026 API sunset), called exclusively from the server.
 - **Data Leaving the System (`PA#3`+):** Only the lab problem statement, the TA's declared constraint text, and the C++ source code of an `Accepted` submission after stripping comments, student names, and student IDs (`FAQ-06`). No student PII, grades, or test inputs/outputs are sent to the model.
-- **Cost & Spending Cap:** Checking one lab of 80 Accepted C++ submissions costs `~$0.012 USD` (`~1,200` input tokens + `~250` output tokens per semantic constraint check). `src/config.js` enforces a per-lab cap of `MODEL_MAX_COST_USD_PER_LAB=0.25`, and the provider API key has a hard monthly cap of `$5.00 USD/month` configured in Google Cloud Billing / AI Studio. Unit, contract, and e2e tests in CI never call the live model API.
+- **Cost & Spending Cap:** At `gemini-3.8-flash` standard pricing through Dec 31, 2026 (`$0.75 / 1M` input tokens, `$3.75 / 1M` output tokens), checking one lab of 80 Accepted C++ submissions (`~1,200` input tokens + `~250` output tokens per semantic constraint check = `96,000` input + `20,000` output tokens) costs `$0.072 + $0.075 = ~$0.147 USD` (~15 cents per lab). `src/config.js` enforces a per-lab cap of `MODEL_MAX_COST_USD_PER_LAB=0.50`, and the provider API key has a hard monthly cap of `$5.00 USD/month` configured in Google Cloud Billing / AI Studio. Unit, contract, and e2e tests in CI never call the live model API.
 
 ---
 
@@ -83,3 +83,19 @@ Changed:
 Rejected:
 - **Rejected squash-merge default for multi-commit TDD PRs:** Standard team templates recommend squashing every PR into one commit, which would collapse separate `test(...)` → `feat(...)` or per-guardrail commits into a single mixed commit and forfeit `PA#3` Criterion 7 / `PA#4` Criterion 3 marks. Documented `--merge` preservation in `CONTRIBUTING.md` §2 instead.
 By hand: Relocated the working repository to `Project/leetkob`, verified `git check-ignore -v` on `.env`, `marking.env`, `ACCESS.md`, and `.env.example`, and preserved tag `pa2` and open `PR #2` untouched.
+
+---
+
+## Entry 6 · 2026-11-18 — Modular `src/` & `migrations/` refactoring and upgrading to `gemini-3.8-flash`
+Tool: Antigravity (Gemini)
+Asked for: Refactor the monolithic `PA#2` slice (`src/app.js`, `src/db.js`, `public/index.html`) so three teammates can build `PA#3`–`PA#5` without merge conflicts, and verify the latest Gemini Flash model and pricing.
+Kept:
+- Extracted `migrations/001_init.sql`, `scripts/migrate.js`, and `scripts/seed.js` with file-backed SQLite `WAL` + `busy_timeout = 5000` support in `src/db.js` (preserving default `:memory:` behavior for `open()` so all `PA#2` unit/contract/e2e tests run untouched).
+- Split `src/app.js` into `src/auth.js`, `src/http.js` (`matchRoute`, traversal-safe `serveStatic`), `src/routes/health.js`, `src/routes/queue.js`, and `src/routes/publish.js`, and separated `public/styles.css` + `public/client.js`.
+- Upgraded default model from `gemini-2.5-flash` to `gemini-3.8-flash` (`$0.75/1M` input, `$3.75/1M` output -> `~$0.147/lab`, `MODEL_MAX_COST_USD_PER_LAB=0.50`).
+Changed:
+- Kept `matchRoute()` executing strictly before `auth.requireAuth()` so unknown `/api/*` paths without an `Authorization` header continue returning `404 not-found` per `docs/contract/publish.md` §4.3 Step 1.
+Rejected:
+- **Rejected keeping `gemini-2.5-flash`:** Checking Google AI Studio's official model lifecycle documentation revealed `gemini-2.5-flash` is deprecated and shuts down API access on **December 1, 2026** — the exact day before the `PA#4` deadline (December 2, 2026). Switched proactively to `gemini-3.8-flash`.
+- **Rejected creating empty placeholder files for `sandbox/`, `checker/`, and `worker.js` during refactoring:** `PA#3` Rubric Criterion 7 grades one subsystem per commit with tests landing no later than implementation; pre-creating empty stubs now would muddy commit attribution.
+By hand: Verified `git diff main -- test/ e2e/ docs/contract/ leetkob-eval/` is completely empty and confirmed all 8 unit tests, 22 contract tests, and Playwright `e2e` pass.
