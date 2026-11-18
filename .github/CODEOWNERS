@@ -1,8 +1,8 @@
-# Gate, contract, test, and eval files require human review (Session 7, slide 313)
-/docs/contract/ @danhuupham
-/test/ @danhuupham
-/e2e/ @danhuupham
-/leetkob-eval/ @danhuupham
-/eval/ @danhuupham
-/.github/ @danhuupham
-/AGENTS.md @danhuupham
+# Gate, contract, test, and eval files require human review (Session 7, slide 22)
+/docs/contract/ @danhuupham @ngvinh18 @Hidebray
+/test/ @danhuupham @ngvinh18 @Hidebray
+/e2e/ @danhuupham @ngvinh18 @Hidebray
+/leetkob-eval/ @danhuupham @ngvinh18 @Hidebray
+/eval/ @danhuupham @ngvinh18 @Hidebray
+/.github/ @danhuupham @ngvinh18 @Hidebray
+/AGENTS.md @danhuupham @ngvinh18 @Hidebray
