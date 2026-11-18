@@ -1,7 +1,7 @@
 # LeeTKOB — Project Rules (`AGENTS.md`)
 
 ## Stack
-- Node.js `>=22.13` (ESM, `node:http`, `node:sqlite`), ESLint 9, Prettier 3, TypeScript 5 (`tsc --noEmit`), Playwright.
+- Node.js `>=22.13` (ESM, `node:http`, `node:sqlite`), ESLint 10, Prettier 3, TypeScript 7 (`tsc --noEmit`), Playwright.
 - LLM (`PA#3`+): Gemini 2.5 Flash on server only (`$0.25/lab` cap, `$5/month` provider cap). Sandbox: Docker (`g++ -std=c++17 -O2`, `--network none`, `--user 65534:65534`, `--read-only`).
 
 ## Commands
