@@ -1,11 +1,16 @@
 node_modules/
 .env
 .env.*
+*.env
 !.env.example
+ACCESS.md
 test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
 *.sqlite
 *.db
+*.db-wal
+*.db-shm
+data/
 .DS_Store

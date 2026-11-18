@@ -1,4 +1,4 @@
-# AI-LOG.md — LeeTKOB (`PA#2`: Harness and Quality Gate)
+# AI-LOG.md — LeeTKOB
 
 **Course:** CSC13114 — Advanced Web Application Development · HK1 2026–2027  
 **Team Members:**
@@ -12,6 +12,8 @@
 - **Cost & Spending Cap:** Checking one lab of 80 Accepted C++ submissions costs `~$0.012 USD` (`~1,200` input tokens + `~250` output tokens per semantic constraint check). `src/config.js` enforces a per-lab cap of `MODEL_MAX_COST_USD_PER_LAB=0.25`, and the provider API key has a hard monthly cap of `$5.00 USD/month` configured in Google Cloud Billing / AI Studio. Unit, contract, and e2e tests in CI never call the live model API.
 
 ---
+
+# Milestone `PA#2` — Harness and Quality Gate
 
 ## Entry 1 · 2026-11-09 — Making `.github/workflows/ci.yml` honest and building the harness (`2e82177`, `79d90f0`, `e45ebdd`)
 Tool: Antigravity (Gemini)
@@ -66,3 +68,18 @@ Changed:
 Rejected:
 - **Rejected the second reader's false alarm on §5 (`/api/v2` versioning):** The second reader also claimed removing the `409` check required bumping the route path to `/api/v2/labs/{labId}/publish` under §5. We rejected that framing because publishing without TA review violates LeeTKOB's core human-gate invariant (`FAQ-12`) in any version, not a v2 migration.
 By hand: Opened PR #2 (`https://github.com/danhuupham/leetkob/pull/2`), confirmed CI Run `42588038582` failed on `gates` and blocked merging even with `--admin` (`GraphQL: Required status check "gates" is failing`), and left PR #2 open as permanent evidence.
+
+---
+
+# Milestone `PA#3` — Prototype with the LLM Feature Running
+
+## Entry 5 · 2026-11-18 — Multi-milestone repository scaffold & team collaboration rules
+Tool: Antigravity (Gemini)
+Asked for: Standardize the repository from a `PA#2`-only slice into a shared `PA#2`–`PA#6` project setup and write team collaboration rules (`CONTRIBUTING.md`, `AGENTS.md`, `.gitignore`, `.github/CODEOWNERS`, `.github/workflows/ci.yml`, `scripts/scan-secrets.js`).
+Kept:
+- `CONTRIBUTING.md` defining per-member `<StudentID>@student.hcmus.edu.vn` Git authorship (`PA#6`), one-part-per-PR test-first commit discipline (`PA#3` Criterion 7 & `PA#4` Criterion 3), merge-commit preservation (`--merge` instead of squash on TDD PRs), `CODEOWNERS` protection on `/eval/`, CI tag trigger `pa*`, and `.gitignore` coverage for `*.env` (`marking.env`), `ACCESS.md`, and SQLite WAL files.
+Changed:
+- Updated `scripts/scan-secrets.js` to enumerate `git ls-files --cached --others --exclude-standard` (plus an explicit check rejecting any git-tracked `.env`, `marking.env`, or `ACCESS.md`), because the `PA#2` `readdirSync` walk scanned gitignored local `.env` files on developer machines and would fail `npm run check` once a real `MODEL_API_KEY` is placed in local `.env` for `PA#3` development.
+Rejected:
+- **Rejected squash-merge default for multi-commit TDD PRs:** Standard team templates recommend squashing every PR into one commit, which would collapse separate `test(...)` → `feat(...)` or per-guardrail commits into a single mixed commit and forfeit `PA#3` Criterion 7 / `PA#4` Criterion 3 marks. Documented `--merge` preservation in `CONTRIBUTING.md` §2 instead.
+By hand: Relocated the working repository to `Project/leetkob`, verified `git check-ignore -v` on `.env`, `marking.env`, `ACCESS.md`, and `.env.example`, and preserved tag `pa2` and open `PR #2` untouched.
