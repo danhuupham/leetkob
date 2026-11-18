@@ -55,7 +55,7 @@ flowchart TD
     Worker -->|"stdin pipe, --network none, --pids-limit 16"| Sandbox["Hardened Docker Sandbox (gcc:13.3-bookworm)"]
     Worker -->|"AC Submissions Only"| AST["1. C++17 AST Hard Rules (web-tree-sitter)"]
     AST -->|"Unresolved Semantic Constraints"| San["2. Comment & PII Stripper (1:1 Line Map)"]
-    San -->|"HTTPS (generativelanguage.googleapis.com)"| LLM["3. Gemini 2.5 Flash ($0.25/lab cap)"]
+    San -->|"HTTPS (generativelanguage.googleapis.com)"| LLM["3. Gemini 3.8 Flash ($0.50/lab cap)"]
     LLM --> Guard["4. Guardrails G1-G5 -> TA Queue (100% viol/unsure + 10% pass)"]
     Guard --> DB
 ```
@@ -76,7 +76,7 @@ In `PA#6`, examiners select individual oral questions from `OWNERS.md` and `git 
 
 | Team Member | Primary Owned Subsystems (`PA#3`–`PA#5`) | Story Points (`PA#3` / `PA#4` / `PA#5`) |
 |---|---|---|
-| **`20120450` — Phạm Hữu Đan** | C++ AST hard rules (`F5`), comment/PII sanitizer & Gemini 2.5 Flash client (`F6`), CI `eval-gate` & held-out calibration (`F10`), structured logs/metrics/traces & incident post-mortem (`F11`) | `8 SP` / `8 SP` / `8 SP` |
+| **`20120450` — Phạm Hữu Đan** | C++ AST hard rules (`F5`), comment/PII sanitizer & Gemini 3.8 Flash client (`F6`), CI `eval-gate` & held-out calibration (`F10`), structured logs/metrics/traces & incident post-mortem (`F11`) | `8 SP` / `8 SP` / `8 SP` |
 | **`21120595` — Nguyễn Thành Vinh** | Accounts/classes/labs (`F1`, `F2`), SQLite WAL queue & worker (`F3`, `Q1`), human gate `10% pass` sampling & Publish contract (`F8`), real-time SSE & appeals (`F9`), HTTPS release/rollback | `6 SP` / `5.5 SP` / `8 SP` |
 | **`23120256` — Trần Đại Hiệp** | Hardened Docker sandbox & 9 attack suites `M1`–`M9` (`F4`), 5 model guardrails `G1`–`G5` (`F7`), dataset CLI checker & `Dockerfile.checker` (`F10`), 80-student load test (`load/`), Beyond-the-Brief diff (`B5`) | `7 SP` / `7.5 SP` / `8 SP` |
 

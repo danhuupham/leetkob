@@ -69,11 +69,11 @@ Every check runs with one documented command locally and in GitHub Actions (`.gi
 
 ## 3. LLM Provider, Cost per Lab & Spending Cap
 
-In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2` Rubric (Criterion 2):
+In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2`–`PA#5` Rubrics:
 
-- **Model Provider & Model:** Google Gemini API — `gemini-2.5-flash` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-2.5-flash`), invoked exclusively from the backend server (`src/`).
-- **Estimated Cost per Lab:** A typical lab has ~80 Accepted C++ submissions (`~1,200` input tokens and `~250` output tokens per semantic constraint check after hard rules filter obvious violations). At `gemini-2.5-flash` pricing (`$0.15 / 1M` input tokens, `$0.60 / 1M` output tokens), checking one full lab of 80 submissions costs **~$0.012 USD** (well under 2 cents per lab).
-- **Per-Lab Application Cost Cap:** `MODEL_MAX_COST_USD_PER_LAB=0.25` (validated at startup by `src/config.js`; if a lab's cumulative token usage reaches `$0.25 USD`, remaining semantic checks fall back to verdict `unsure` with reason `cost-cap-exceeded` per `FAQ-09` so a TA reviews them manually).
+- **Model Provider & Model:** Google Gemini API — `gemini-3.8-flash` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-3.8-flash`; upgraded from deprecated `gemini-2.5-flash` ahead of its Dec 1, 2026 sunset), invoked exclusively from the backend server (`src/`).
+- **Estimated Cost per Lab:** A typical lab has ~80 Accepted C++ submissions (`~1,200` input tokens and `~250` output tokens per semantic constraint check after hard rules filter ban-list violations). At `gemini-3.8-flash` standard pricing through Dec 31, 2026 (`$0.75 / 1M` input tokens, `$3.75 / 1M` output tokens), checking 80 submissions (`96,000` input + `20,000` output tokens) costs `$0.072 + $0.075 =` **~$0.147 USD** (~15 cents per lab).
+- **Per-Lab Application Cost Cap:** `MODEL_MAX_COST_USD_PER_LAB=0.50` (validated at startup by `src/config.js`; if a lab's cumulative token usage reaches `$0.50 USD`, remaining semantic checks fall back to verdict `unsure` with reason `cost-cap-exceeded` per `FAQ-09` so a TA reviews them manually).
 - **Provider Hard Spending Cap:** The `MODEL_API_KEY` used for LeeTKOB has a **hard monthly spending cap of `$5.00 USD / month`** configured on the Google Cloud Billing / Google AI Studio project, with separate keys per environment (`development`, `CI`, `production`).
 - **Zero Model Calls in Automated Tests:** Unit tests (`npm test`), contract tests (`npm run contract`), and e2e tests (`npm run e2e`) **never** call the live Gemini API and require no API key to pass on a fresh clone or in CI.
 
@@ -101,15 +101,20 @@ In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2` Rubric (Criter
 | [`.github/CODEOWNERS`](.github/CODEOWNERS) | Code-owner review protection for `docs/contract/`, `test/`, `e2e/`, `leetkob-eval/`, `eval/`, `.github/`, and `AGENTS.md` |
 | [`leetkob-eval/`](leetkob-eval/README.md) | Published read-only C++ dev set (`47` solutions, `102` pairs), `labels.jsonl`, and `eval.mjs` (locked with `-text` in `.gitattributes`) |
 | [`docs/plans/`](docs/plans/MASTER-PLAN.md) | Shared team implementation plans (`MASTER-PLAN.md`, `PA3-Plan.md`–`PA6-Plan.md`) |
-| [`docs/reference/`](docs/reference/FAQ.md) | LeeTKOB Class Brief (`BRIEF.md`) and Product Owners' FAQ (`FAQ.md`) |
+| [`docs/reference/`](docs/reference/FAQ.md) | LeeTKOB Class Brief (`BRIEF.md`), Milestones (`MILESTONES.md`), Product Owners' FAQ (`FAQ.md`), and `PA#3`–`PA#6` rubrics (`rubrics/`) |
 | [`docs/contract/publish.md`](docs/contract/publish.md) | Complete RFC 9457 API contract for `POST /api/labs/{labId}/publish` |
 | [`docs/security/threat-model.md`](docs/security/threat-model.md) | LeeTKOB threat model across roles, sandbox, secrets, supply chain, and prompt injection |
-| [`src/app.js`](src/app.js) | HTTP routes for the TA review queue, review decisions, and grade publishing |
+| [`migrations/`](migrations/001_init.sql) | Sequential SQLite schema migrations applied via `npm run migrate` |
+| [`src/app.js`](src/app.js) | Thin HTTP composition root wiring modular routes, static assets, and `500 internal` safety net |
+| [`src/auth.js`](src/auth.js) | Shared Bearer token authentication, `class_staff` / `enrollments` ownership checks, and ID parsing |
+| [`src/routes/`](src/routes/publish.js) | Domain-scoped route handlers (`health.js`, `queue.js`, `publish.js`) for conflict-free team development |
 | [`src/grades.js`](src/grades.js) | Pure grading logic (`markFor` with `FAQ-11` deduplication, `needsReview`) |
 | [`src/config.js`](src/config.js) | Startup config validation (`loadConfig`) and sandbox environment sanitizer (`getSandboxEnv`) |
-| [`src/db.js`](src/db.js) | In-memory SQLite schema and seed data (`users`, `labs` with `deadline_at`, `submissions`, `idempotency_keys`) |
-| [`src/http.js`](src/http.js) | JSON and RFC 9457 `application/problem+json` response helpers |
-| [`src/server.js`](src/server.js) | HTTP server entrypoint using validated `config.port` from `src/config.js` |
+| [`src/db.js`](src/db.js) | SQLite connection factory supporting persistent `WAL` databases and `:memory:` test fixtures (`migrate`, `seedDemoData`) |
+| [`src/http.js`](src/http.js) | JSON / RFC 9457 `application/problem+json` helpers, route matcher (`matchRoute`), and safe static server (`serveStatic`) |
+| [`src/server.js`](src/server.js) | HTTP server entrypoint using `config.databaseUrl` and graceful `SIGINT`/`SIGTERM` shutdown |
+| [`public/`](public/index.html) | Browser UI (`index.html`, `styles.css`, `client.js`) |
+| [`scripts/`](scripts/scan-secrets.js) | Standalone CLI utilities (`migrate.js`, `seed.js`, `scan-secrets.js`, `verify-eval.js`) |
 | [`test/unit/grades.test.js`](test/unit/grades.test.js) | 8 unit tests for grading formulas, review queue filtering, and sandbox secret isolation |
 | [`test/contract/publish.contract.test.js`](test/contract/publish.contract.test.js) | 22 HTTP contract tests verifying every status, problem slug, ownership rule, deadline check, refusal invariant, and idempotency rule in `docs/contract/publish.md` |
 | [`e2e/publish.spec.js`](e2e/publish.spec.js) | Playwright end-to-end test: TA reviews pending violation and publishes grades |

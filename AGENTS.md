@@ -2,13 +2,13 @@
 
 ## Stack
 - Node.js `>=22.13` (ESM, `node:http`, `node:sqlite`), ESLint 10, Prettier 3, TypeScript 7 (`tsc --noEmit`), Playwright.
-- LLM (`PA#3`+): Gemini 2.5 Flash on server only (`$0.25/lab` cap, `$5/month` provider cap). Sandbox: Docker (`g++ -std=c++17 -O2`, `--network none`, `--user 65534:65534`, `--read-only`).
+- LLM (`PA#3`+): Gemini 3.8 Flash (`gemini-3.8-flash`) on server only (`$0.50/lab` cap, `$5/month` provider cap). Sandbox: Docker (`g++ -std=c++17 -O2`, `--network none`, `--user 65534:65534`, `--read-only`).
 
 ## Commands
-- `npm ci` · `npm start` · `npm run format` · `npm run lint` · `npm run format:check` · `npm run typecheck` · `npm test` · `npm run contract` · `npm run scan` · `npm run verify:eval` · `npm run check` · `npm run e2e`
+- `npm ci` · `npm run migrate` · `npm run seed` · `npm start` · `npm run format` · `npm run lint` · `npm run format:check` · `npm run typecheck` · `npm test` · `npm run contract` · `npm run scan` · `npm run verify:eval` · `npm run check` · `npm run e2e`
 
 ## Conventions & Team Workflow
-- Named exports only; validate env once at startup in `src/config.js` and never read `process.env` in `src/server.js` or `src/app.js`.
+- Named exports only; validate env once at startup in `src/config.js` and never read `process.env` in `src/server.js`, `src/app.js`, or `src/routes/`.
 - Return RFC 9457 `application/problem+json` on all `4xx`/`5xx`; never leak SQL, table names, or stack traces in `detail`.
 - Check role + class ownership (`class_staff` / `enrollments`) **before** any SQL write (`403` for enrolled students, `404` for other classes; traced to [`f8f54cb`](https://github.com/danhuupham/leetkob/commit/f8f54cb) → [`3e1f53c`](https://github.com/danhuupham/leetkob/commit/3e1f53c), `AI-LOG.md` Entry 2).
 - Root `DatabaseSync` on `server.__db` so V8 GC never finalizes prepared statements in `e2e` (traced to CI Run [`42586953474`](https://github.com/danhuupham/leetkob/actions/runs/42586953474) → [`3e1f53c`](https://github.com/danhuupham/leetkob/commit/3e1f53c), `AI-LOG.md` Entry 3).

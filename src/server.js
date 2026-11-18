@@ -2,12 +2,27 @@ import { open, USERS } from './db.js';
 import { createApp } from './app.js';
 import { config } from './config.js';
 
-const db = open();
+const db = open(config.databaseUrl);
 const server = createApp(db).listen(config.port, () => {
-  console.log(
-    `LeeTKOB slice on http://localhost:${config.port}: in-memory data, reset on every start`,
-  );
-  console.log('tokens:  ' + USERS.map((u) => `${u.name}=${u.token}`).join('  '));
+  console.log(`LeeTKOB listening on http://localhost:${config.port} (db: ${config.databaseUrl})`);
+  if (config.nodeEnv !== 'production') {
+    console.log('dev tokens: ' + USERS.map((u) => `${u.name}=${u.token}`).join('  '));
+  }
 });
 
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => server.close(() => process.exit(0)));
+let shuttingDown = false;
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    server.close(() => {
+      try {
+        db.close();
+      } catch {
+        // Ignore if already closed.
+      }
+      process.exit(0);
+    });
+    server.closeIdleConnections?.();
+  });
+}
