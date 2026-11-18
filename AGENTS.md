@@ -12,7 +12,7 @@
 - Return RFC 9457 `application/problem+json` on all `4xx`/`5xx`; never leak SQL, table names, or stack traces in `detail`.
 - Check role + class ownership (`class_staff` / `enrollments`) **before** any SQL write (`403` for enrolled students, `404` for other classes; traced to [`f8f54cb`](https://github.com/danhuupham/leetkob/commit/f8f54cb) → [`3e1f53c`](https://github.com/danhuupham/leetkob/commit/3e1f53c), `AI-LOG.md` Entry 2).
 - Root `DatabaseSync` on `server.__db` so V8 GC never finalizes prepared statements in `e2e` (traced to CI Run [`42586953474`](https://github.com/danhuupham/leetkob/actions/runs/42586953474) → [`3e1f53c`](https://github.com/danhuupham/leetkob/commit/3e1f53c), `AI-LOG.md` Entry 3).
-- Follow [`CONTRIBUTING.md`](CONTRIBUTING.md): commit under your own `<StudentID>@student.hcmus.edu.vn` identity, keep **one subsystem/guardrail per commit & PR**, land tests/eval cases **no later than** `src/`, and log real *Changed/Rejected* AI outputs in `AI-LOG.md`.
+- Follow [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`docs/plans/SHARED-CONTRACTS.md`](docs/plans/SHARED-CONTRACTS.md): commit under your own `<StudentID>@student.hcmus.edu.vn` identity, use exact shared SQL/API/module schemas, keep **one subsystem/guardrail per commit & PR**, land tests/eval cases **no later than** `src/`, and log real *Changed/Rejected* AI outputs in `AI-LOG.md`.
 
 ## Never
 - Never pass secrets (`MODEL_API_KEY`, `SESSION_SECRET`, `.env`) or host mounts (`-v`, `docker.sock`) into the C++ judge sandbox.

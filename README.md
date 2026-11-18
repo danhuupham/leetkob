@@ -100,7 +100,7 @@ In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2`–`PA#5` Rubri
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Required GitHub Actions workflows (`gates` and `e2e`) across PRs, `main`, and `pa*` tags |
 | [`.github/CODEOWNERS`](.github/CODEOWNERS) | Code-owner review protection for `docs/contract/`, `test/`, `e2e/`, `leetkob-eval/`, `eval/`, `.github/`, and `AGENTS.md` |
 | [`leetkob-eval/`](leetkob-eval/README.md) | Published read-only C++ dev set (`47` solutions, `102` pairs), `labels.jsonl`, and `eval.mjs` (locked with `-text` in `.gitattributes`) |
-| [`docs/plans/`](docs/plans/MASTER-PLAN.md) | Shared team implementation plans (`MASTER-PLAN.md`, `PA3-Plan.md`–`PA6-Plan.md`) |
+| [`docs/plans/`](docs/plans/MASTER-PLAN.md) | Agent-executable team plans (`MASTER-PLAN.md`, `SHARED-CONTRACTS.md`, `PA3-Plan.md`–`PA6-Plan.md`) |
 | [`docs/reference/`](docs/reference/FAQ.md) | LeeTKOB Class Brief (`BRIEF.md`), Milestones (`MILESTONES.md`), Product Owners' FAQ (`FAQ.md`), and `PA#3`–`PA#6` rubrics (`rubrics/`) |
 | [`docs/contract/publish.md`](docs/contract/publish.md) | Complete RFC 9457 API contract for `POST /api/labs/{labId}/publish` |
 | [`docs/security/threat-model.md`](docs/security/threat-model.md) | LeeTKOB threat model across roles, sandbox, secrets, supply chain, and prompt injection |
