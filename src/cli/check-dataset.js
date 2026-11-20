@@ -16,7 +16,9 @@ import { checkSubmissionConstraints } from '../checker/pipeline.js';
  *   dataDir: string,
  *   outPath: string,
  *   callLogPath: string | null,
- *   concurrency: number
+ *   concurrency: number,
+ *   delayMs: number,
+ *   modelName: string | null
  * }} CheckerCliArgs
  */
 
@@ -33,7 +35,10 @@ export function parseCliArgs(argv) {
   let outPath = null;
   /** @type {string | null} */
   let callLogPath = null;
+  /** @type {string | null} */
+  let modelName = null;
   let concurrency = 4;
+  let delayMs = 0;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -46,6 +51,9 @@ export function parseCliArgs(argv) {
     } else if (arg === '--call-log') {
       if (i + 1 >= argv.length) throw new Error('--call-log requires a file path');
       callLogPath = argv[++i];
+    } else if (arg === '--model') {
+      if (i + 1 >= argv.length) throw new Error('--model requires a model name');
+      modelName = argv[++i];
     } else if (arg === '--concurrency') {
       if (i + 1 >= argv.length) throw new Error('--concurrency requires an integer');
       const parsed = Number(argv[++i]);
@@ -53,6 +61,13 @@ export function parseCliArgs(argv) {
         throw new Error(`Invalid --concurrency value: ${argv[i]}`);
       }
       concurrency = parsed;
+    } else if (arg === '--delay-ms') {
+      if (i + 1 >= argv.length) throw new Error('--delay-ms requires a non-negative integer');
+      const parsed = Number(argv[++i]);
+      if (!Number.isInteger(parsed) || parsed < 0 || parsed > 60000) {
+        throw new Error(`Invalid --delay-ms value: ${argv[i]}`);
+      }
+      delayMs = parsed;
     } else {
       throw new Error(`Unknown CLI argument: ${arg}`);
     }
@@ -60,11 +75,11 @@ export function parseCliArgs(argv) {
 
   if (!dataDir || !outPath) {
     throw new Error(
-      'Usage: node src/cli/check-dataset.js --data <dataset-folder> --out <predictions.jsonl|-> [--call-log <file.jsonl>]',
+      'Usage: node src/cli/check-dataset.js --data <dataset-folder> --out <predictions.jsonl|-> [--call-log <file.jsonl>] [--model <name>] [--delay-ms <ms>]',
     );
   }
 
-  return { dataDir, outPath, callLogPath, concurrency };
+  return { dataDir, outPath, callLogPath, concurrency, delayMs, modelName };
 }
 
 /**
@@ -145,6 +160,8 @@ export function discoverDataset(dataDir) {
  *   callLogPath?: string | null,
  *   modelOff?: boolean,
  *   concurrency?: number,
+ *   delayMs?: number,
+ *   modelName?: string | null,
  *   llmTransport?: Parameters<typeof checkSubmissionConstraints>[0]['llmTransport'],
  *   modelConfig?: Parameters<typeof checkSubmissionConstraints>[0]['modelConfig']
  * }} opts
@@ -161,18 +178,59 @@ export async function runDatasetChecker(opts) {
     callLogPath = null,
     modelOff = process.env.MODEL_OFF === '1',
     concurrency = 4,
+    delayMs = 0,
+    modelName = null,
     llmTransport,
     modelConfig,
   } = opts;
 
+  const effectiveModelConfig = {
+    modelName:
+      modelConfig?.modelName ?? modelName ?? (process.env.MODEL_NAME || 'gemini-3-flash-preview'),
+    ...modelConfig,
+  };
+
   const items = discoverDataset(dataDir);
   /** @type {Array<Array<Record<string, unknown>>>} */
   const predictionsByIndex = new Array(items.length);
-  /** @type {Array<Record<string, unknown>>} */
-  const callLogs = [];
+  /** @type {Array<Array<Record<string, unknown>>>} */
+  const callLogsByIndex = Array.from({ length: items.length }, () => []);
 
   let nextIdx = 0;
   const workerCount = Math.min(Math.max(1, concurrency), Math.max(1, items.length));
+
+  /**
+   * @param {number} itemIdx
+   * @returns {Promise<boolean>}
+   */
+  async function evaluateItem(itemIdx) {
+    const item = items[itemIdx];
+    /** @type {Array<Record<string, unknown>>} */
+    const itemLogs = [];
+    const results = await checkSubmissionConstraints({
+      statement: item.statement,
+      constraints: item.constraints,
+      code: item.code,
+      modelOff,
+      modelConfig: effectiveModelConfig,
+      ...(llmTransport ? { llmTransport } : {}),
+      callLogWriter: (entry) => {
+        itemLogs.push({
+          solution: item.solutionId,
+          ...entry,
+        });
+      },
+    });
+
+    callLogsByIndex[itemIdx] = itemLogs;
+    predictionsByIndex[itemIdx] = results.map((r) => ({
+      solution: item.solutionId,
+      constraint: r.constraintCode,
+      verdict: r.verdict,
+      evidence: r.evidence,
+    }));
+    return itemLogs.length > 0;
+  }
 
   async function runWorker() {
     while (true) {
@@ -180,32 +238,16 @@ export async function runDatasetChecker(opts) {
       nextIdx += 1;
       if (idx >= items.length) return;
 
-      const item = items[idx];
-      const results = await checkSubmissionConstraints({
-        statement: item.statement,
-        constraints: item.constraints,
-        code: item.code,
-        modelOff,
-        ...(modelConfig ? { modelConfig } : {}),
-        ...(llmTransport ? { llmTransport } : {}),
-        callLogWriter: (entry) => {
-          callLogs.push({
-            solution: item.solutionId,
-            ...entry,
-          });
-        },
-      });
-
-      predictionsByIndex[idx] = results.map((r) => ({
-        solution: item.solutionId,
-        constraint: r.constraintCode,
-        verdict: r.verdict,
-        evidence: r.evidence,
-      }));
+      const madeModelCall = await evaluateItem(idx);
+      if (delayMs > 0 && madeModelCall && !modelOff) {
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
     }
   }
 
   await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+
+  const callLogs = callLogsByIndex.flat();
 
   const lines = predictionsByIndex.flat().map((row) => JSON.stringify(row));
   const jsonlOutput = lines.length > 0 ? `${lines.join('\n')}\n` : '';
