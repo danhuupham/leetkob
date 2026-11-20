@@ -35,3 +35,17 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
+
+  sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - run: docker build -f Dockerfile.sandbox -t leetkob-sandbox:test .
+      - run: npm run test:sandbox
+        env:
+          SANDBOX_IMAGE: leetkob-sandbox:test
