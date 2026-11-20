@@ -99,3 +99,21 @@ Rejected:
 - **Rejected keeping `gemini-2.5-flash`:** Checking Google AI Studio's official model lifecycle documentation revealed `gemini-2.5-flash` is deprecated and shuts down API access on **December 1, 2026** — the exact day before the `PA#4` deadline (December 2, 2026). Switched proactively to `gemini-3.8-flash`.
 - **Rejected creating empty placeholder files for `sandbox/`, `checker/`, and `worker.js` during refactoring:** `PA#3` Rubric Criterion 7 grades one subsystem per commit with tests landing no later than implementation; pre-creating empty stubs now would muddy commit attribution.
 By hand: Verified `git diff main -- test/ e2e/ docs/contract/ leetkob-eval/` is completely empty and confirmed all 8 unit tests, 22 contract tests, and Playwright `e2e` pass.
+
+---
+
+## Entry 7 · 2026-11-20 — Task `T3.2`: Hardened Docker C++17 Sandbox & `M1`–`M9` Attack Suite (`15b23b6`, `57249b3`)
+Tool: Antigravity
+Asked for: Implement `PA#3` Task `T3.2` test-first on branch `feat/pa3-sandbox`: 10 C++ attack fixtures (`test/fixtures/attacks/m1_network.cpp`–`m9_include_env.cpp`) and `test/sandbox/attacks.test.js` first, followed by `Dockerfile.sandbox`, `src/sandbox/runner.js` (`runInSandbox`), `"test:sandbox"`, and the `sandbox` CI job.
+Kept:
+- `test/fixtures/attacks/` and `test/sandbox/attacks.test.js` committed first (`15b23b6`) covering compliant token-by-token C++17 judging plus all 9 sandbox minimums (`M1`–`M9`, including `m4_memory_1gib_readback.cpp` volatile page readback and `m9_include_env.cpp` inside-container compile isolation).
+- `Dockerfile.sandbox` (`gcc:13.3-bookworm`, `USER 65534:65534`) and `src/sandbox/runner.js` (`57249b3`) enforcing `--network none`, `--user 65534:65534`, `--read-only`, `--tmpfs /tmp:rw,exec,nosuid,nodev,size=32m`, `--memory`/`--memory-swap`, `--pids-limit`, `--cpus 1`, `--cap-drop ALL`, and `--security-opt no-new-privileges`, plus host-side `docker rm -f` wall-clock reaping (`M3`).
+Changed:
+- Initially passed `env: getSandboxEnv()` directly to `spawn('docker', ...)` in `src/sandbox/runner.js`, which threw `spawn docker ENOENT` (`errno: -4058`) on Windows Docker Desktop because `getSandboxEnv()` defines POSIX `PATH=/usr/local/sbin:...`. Kept `getSandboxEnv()` verbatim on Linux/CI and constructed a minimal `dockerCliEnv` on `win32` copying only `PATH`, `SystemRoot`, and `USERPROFILE` so `docker.exe` resolves while still stripping `MODEL_API_KEY`, `SESSION_SECRET`, and `DATABASE_URL` (`M9`).
+- Avoided relying on POSIX `sh` pipeline `$?` for `(...) | head -c ...`, because `dash` returns `head`'s exit code (`0`) and would mask `SIGKILL`/`SIGXCPU`/`SIGPIPE` failures across `M1`–`M6`; captured `/tmp/main`'s exit status explicitly to `/tmp/rc.txt` inside the producer subshell and checked `wc -c < /tmp/out.txt` against `outputLimitBytes`.
+- Closed `STDOUT_FILENO`/`STDERR_FILENO` in forked children inside `m5_pids_fork_bomb.cpp` so `--pids-limit 16` triggers cleanly without keeping `stdout` pipes open past parent exit.
+Rejected:
+- **Rejected host bind mounts (`-v`) for transferring `main.cpp` and test inputs:** Host mounts violate `M8` (`no host mounts`) and complicate read-only isolation; streamed Base64-encoded payloads over `stdin` into `--tmpfs /tmp` instead.
+- **Rejected process-only timeout without `docker rm -f` container reaping (`M3`):** Waiting only on the `docker` CLI PID leaves forked children holding `stdout` pipes alive (`m3_wall_fork_pipe.cpp`); host timer invokes `docker rm -f leetkob-judge-<uuid>` to terminate the container in `~4.8s` (`< 6.5s` threshold) with zero leftover containers.
+- **Rejected `i & 0xff` page fill without readback (`M4`):** `4096`-aligned `i & 0xff` evaluates to `0` and write-only allocations risk dead-code elimination under `g++ -O2`; wrote `(i / 4096) & 0xff` via `volatile unsigned char*` and summed all pages into a printed `checksum`.
+By hand: Built `leetkob-sandbox:test`, verified `npm run test:sandbox` passed `11/11` tests (`16.13s`), verified `git diff 15b23b6..HEAD -- test/` is empty (zero test edits after commit 1), and confirmed `npm run check` passes.
