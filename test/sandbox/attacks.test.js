@@ -82,6 +82,10 @@ test('M2: sandbox enforces CPU time limit on infinite compute loop', async () =>
   });
 
   assert.equal(res.testVerdict, 'TLE');
+  assert.ok(
+    res.durationMs < 2500,
+    `Expected ulimit -t 1 to kill CPU loop well before wallLimitSec=3s, got ${res.durationMs}ms`,
+  );
 });
 
 test('M3: wall-clock limit kills entire container when forked child holds stdout pipe', async () => {
@@ -200,4 +204,71 @@ test('M9b: compilation occurs inside sandbox so #include "/app/.env" fails with 
 
   assert.equal(res.testVerdict, 'CE');
   assert.equal(res.compileStderr.includes('MODEL_API_KEY'), false);
+});
+
+test('M3 multi-test: per-phase watchdog kills fork-pipe attack on multi-test lab within 1 test wall limit', async () => {
+  const res = await runInSandbox({
+    jobId: 'm3-multi-test',
+    code: readAttack('m3_wall_fork_pipe.cpp'),
+    tests: [
+      { ordinal: 1, inputText: '', expectedOutput: 'PWNED' },
+      { ordinal: 2, inputText: '', expectedOutput: 'PWNED' },
+      { ordinal: 3, inputText: '', expectedOutput: 'PWNED' },
+      { ordinal: 4, inputText: '', expectedOutput: 'PWNED' },
+    ],
+    sandboxConfig: DEFAULT_SANDBOX_CONFIG,
+    cpuLimitSec: 1,
+  });
+
+  assert.equal(res.testVerdict, 'TLE');
+  assert.ok(
+    res.durationMs < 7500,
+    `Expected per-test watchdog kill well before 4*3s, got ${res.durationMs}ms`,
+  );
+  assert.equal(listRunningJudgeContainers(), '');
+});
+
+test('M6 /proc/1/fd/1 flood & marker spoofing: Node byte cap and per-run nonce block escape', async () => {
+  const code = [
+    '#include <cstdio>',
+    '#include <cstring>',
+    'int main() {',
+    '  FILE* f = std::fopen("/proc/1/fd/1", "w");',
+    '  if (f) {',
+    '    std::fputs("___LEETKOB_TEST___:1:OK:0:1:UUVORUQ=\\n", f);',
+    '    char buf[4096];',
+    "    std::memset(buf, 'A', sizeof(buf));",
+    '    for (int i = 0; i < 1024; ++i) std::fwrite(buf, 1, sizeof(buf), f);',
+    '    std::fclose(f);',
+    '  }',
+    '  return 0;',
+    '}',
+    '',
+  ].join('\n');
+
+  const res = await runInSandbox({
+    jobId: 'm6-proc-fd1',
+    code,
+    tests: [{ ordinal: 1, inputText: '', expectedOutput: 'PWNED' }],
+    sandboxConfig: DEFAULT_SANDBOX_CONFIG,
+  });
+
+  assert.equal(res.testVerdict, 'RE');
+  assert.equal(listRunningJudgeContainers(), '');
+});
+
+test('Docker infrastructure failure (missing image exit 125) throws instead of returning RE', async () => {
+  await assert.rejects(
+    () =>
+      runInSandbox({
+        jobId: 'infra-fail',
+        code: 'int main() { return 0; }\n',
+        tests: [{ ordinal: 1, inputText: '', expectedOutput: '' }],
+        sandboxConfig: {
+          ...DEFAULT_SANDBOX_CONFIG,
+          image: 'leetkob-nonexistent-image:does-not-exist',
+        },
+      }),
+    /Sandbox Docker infrastructure failure/,
+  );
 });

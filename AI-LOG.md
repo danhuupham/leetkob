@@ -102,7 +102,7 @@ By hand: Verified `git diff main -- test/ e2e/ docs/contract/ leetkob-eval/` is 
 
 ---
 
-## Entry 7 · 2026-11-20 — Task `T3.2`: Hardened Docker C++17 Sandbox & `M1`–`M9` Attack Suite (`15b23b6`, `57249b3`)
+## Entry 9 · 2026-11-20 — Task `T3.2`: Hardened Docker C++17 Sandbox & `M1`–`M9` Attack Suite (`15b23b6`, `57249b3`)
 Tool: Antigravity
 Asked for: Implement `PA#3` Task `T3.2` test-first on branch `feat/pa3-sandbox`: 10 C++ attack fixtures (`test/fixtures/attacks/m1_network.cpp`–`m9_include_env.cpp`) and `test/sandbox/attacks.test.js` first, followed by `Dockerfile.sandbox`, `src/sandbox/runner.js` (`runInSandbox`), `"test:sandbox"`, and the `sandbox` CI job.
 Kept:
