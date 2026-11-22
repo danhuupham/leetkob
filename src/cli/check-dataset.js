@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { config } from '../config.js';
 import { checkSubmissionConstraints } from '../checker/pipeline.js';
+
+const USAGE_TEXT =
+  'Usage: node src/cli/check-dataset.js --data <dataset-folder> --out <predictions.jsonl|-> [--call-log <file.jsonl>] [--model <name>] [--concurrency <1..16>] [--delay-ms <0..60000>] [--help]';
 
 /**
  * @typedef {{
@@ -18,7 +22,8 @@ import { checkSubmissionConstraints } from '../checker/pipeline.js';
  *   callLogPath: string | null,
  *   concurrency: number,
  *   delayMs: number,
- *   modelName: string | null
+ *   modelName: string | null,
+ *   help: boolean
  * }} CheckerCliArgs
  */
 
@@ -42,7 +47,17 @@ export function parseCliArgs(argv) {
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--data') {
+    if (arg === '--help' || arg === '-h') {
+      return {
+        dataDir: '',
+        outPath: '',
+        callLogPath: null,
+        concurrency,
+        delayMs,
+        modelName,
+        help: true,
+      };
+    } else if (arg === '--data') {
       if (i + 1 >= argv.length) throw new Error('--data requires a directory path');
       dataDir = argv[++i];
     } else if (arg === '--out') {
@@ -74,12 +89,10 @@ export function parseCliArgs(argv) {
   }
 
   if (!dataDir || !outPath) {
-    throw new Error(
-      'Usage: node src/cli/check-dataset.js --data <dataset-folder> --out <predictions.jsonl|-> [--call-log <file.jsonl>] [--model <name>] [--delay-ms <ms>]',
-    );
+    throw new Error(USAGE_TEXT);
   }
 
-  return { dataDir, outPath, callLogPath, concurrency, delayMs, modelName };
+  return { dataDir, outPath, callLogPath, concurrency, delayMs, modelName, help: false };
 }
 
 /**
@@ -184,10 +197,20 @@ export async function runDatasetChecker(opts) {
     modelConfig,
   } = opts;
 
+  const resolvedModelName = modelConfig?.modelName ?? modelName ?? config.modelName;
+  const resolvedApiKey =
+    modelConfig?.modelApiKey ?? process.env.MODEL_API_KEY ?? config.modelApiKey;
+
+  if (!modelOff && !llmTransport && !String(resolvedApiKey || '').trim()) {
+    throw new Error(
+      'MODEL_API_KEY is required when MODEL_OFF is not set to 1 (set MODEL_OFF=1 for offline hard-rules-only evaluation)',
+    );
+  }
+
   const effectiveModelConfig = {
-    modelName:
-      modelConfig?.modelName ?? modelName ?? (process.env.MODEL_NAME || 'gemini-3-flash-preview'),
     ...modelConfig,
+    modelName: resolvedModelName,
+    ...(resolvedApiKey ? { modelApiKey: resolvedApiKey } : {}),
   };
 
   const items = discoverDataset(dataDir);
@@ -281,6 +304,10 @@ const isMain =
 if (isMain) {
   try {
     const args = parseCliArgs(process.argv.slice(2));
+    if (args.help) {
+      console.error(USAGE_TEXT);
+      process.exit(0);
+    }
     const summary = await runDatasetChecker(args);
     if (args.outPath !== '-') {
       console.error(

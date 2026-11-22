@@ -71,8 +71,20 @@ Every check runs with one documented command locally and in GitHub Actions (`.gi
 
 In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2`–`PA#5` Rubrics:
 
-- **Model Provider & Model:** Google Gemini API — `gemini-3.8-flash` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-3.8-flash`; upgraded from deprecated `gemini-2.5-flash` ahead of its Dec 1, 2026 sunset), invoked exclusively from the backend server (`src/`).
-- **Estimated Cost per Lab:** A typical lab has ~80 Accepted C++ submissions (`~1,200` input tokens and `~250` output tokens per semantic constraint check after hard rules filter ban-list violations). At `gemini-3.8-flash` standard pricing through Dec 31, 2026 (`$0.75 / 1M` input tokens, `$3.75 / 1M` output tokens), checking 80 submissions (`96,000` input + `20,000` output tokens) costs `$0.072 + $0.075 =` **~$0.147 USD** (~15 cents per lab).
+- **Model Provider & Model:** Google Gemini API — default `gemini-3.8-flash` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-3.8-flash`; `$0.75 / 1M` input, `$3.75 / 1M` output including thinking tokens), with `--model` / `MODEL_NAME` override supporting `gemini-3-flash-preview` (`$0.50 / 1M` input, `$3.00 / 1M` output including thinking tokens), invoked exclusively from the backend server (`src/`).
+- **Estimated & Measured Cost per Lab (80 submissions):**
+  - **Budget estimate (`gemini-3.8-flash`):** ~80 Accepted C++ submissions (`~1,200` input + `~250` output/thinking tokens per semantic check) → `$0.072 + $0.075 =` **~$0.147 USD/lab**.
+  - **Measured `PA#3` dev-set run (`eval/runs/pa3-dev/`, `gemini-3-flash-preview`, `39/39` `ok` calls):** `38,522` input tokens (`~988`/call) + `4,851` output+thinking tokens (`~124`/call, including `thoughtsTokenCount`) = **`$0.033814 USD`** (`$0.000867/call`) → **`~$0.069 USD`** per 80-submission lab (`~$0.097 USD/lab` at `gemini-3.8-flash` rates), well within the `$0.50/lab` cap.
+- **Offline Dataset Checker CLI & Container (`MODEL_OFF=1`):**
+  ```bash
+  # Local offline run (0 network sockets, hard rules only)
+  MODEL_OFF=1 node src/cli/check-dataset.js --data leetkob-eval --out /tmp/off.jsonl
+  node leetkob-eval/eval.mjs --data leetkob-eval --predictions /tmp/off.jsonl
+
+  # Containerized checker (--network none)
+  docker build -f Dockerfile.checker -t leetkob-checker .
+  docker run --rm --network none -e MODEL_OFF=1 -v "$PWD/leetkob-eval:/data:ro" leetkob-checker --data /data --out -
+  ```
 - **Per-Lab Application Cost Cap:** `MODEL_MAX_COST_USD_PER_LAB=0.50` (validated at startup by `src/config.js`; if a lab's cumulative token usage reaches `$0.50 USD`, remaining semantic checks fall back to verdict `unsure` with reason `cost-cap-exceeded` per `FAQ-09` so a TA reviews them manually).
 - **Provider Hard Spending Cap:** The `MODEL_API_KEY` used for LeeTKOB has a **hard monthly spending cap of `$5.00 USD / month`** configured on the Google Cloud Billing / Google AI Studio project, with separate keys per environment (`development`, `CI`, `production`).
 - **Zero Model Calls in Automated Tests:** Unit tests (`npm test`), contract tests (`npm run contract`), and e2e tests (`npm run e2e`) **never** call the live Gemini API and require no API key to pass on a fresh clone or in CI.

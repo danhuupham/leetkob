@@ -1,8 +1,9 @@
 FROM node:22.13-bookworm-slim
 
+ENV NODE_ENV=development
 WORKDIR /app
 COPY package.json ./
 COPY src ./src
 
 USER node
-ENTRYPOINT ["node", "src/cli/check-dataset.js"]
+ENTRYPOINT ["sh", "-c", "NODE_ENV=development exec node src/cli/check-dataset.js \"$@\"", "--"]

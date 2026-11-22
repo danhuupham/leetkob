@@ -1,34 +1,24 @@
-LeeTKOB eval · data D:\Project\Advantage of Software\leetkob\leetkob-eval · predictions D:\Project\Advantage of Software\leetkob\eval\runs\pa3-dev\predictions.jsonl
+LeeTKOB eval · data leetkob-eval · predictions eval/runs/pa3-dev/predictions.jsonl
 47 solutions, 102 (solution, constraint) pairs: 65 labelled pass, 37 labelled violation
 
 Metrics
   wrongful deductions    0                  ok    (target = 0)
-  recall                 83.8% (31/37)      FAIL  (target >= 90.0%)
-  unsure rate            6.9% (7/102)       ok    (target <= 20.0%)
+  recall                 97.3% (36/37)      ok    (target >= 90.0%)
+  unsure rate            0.0% (0/102)       ok    (target <= 20.0%)
 
 By tag (a pair can carry several tags)
   tag        pairs  pass  viol  caught  wrongful  unsure
-  obvious       15     0    15   14/15         0       1
-  disguised     22     0    22   17/22         0       4
-  trap          14    14     0       -         0       1
-  injection      5     0     5     4/5         0       1
-  style         11    11     0       -         0       1
+  obvious       15     0    15   15/15         0       0
+  disguised     22     0    22   21/22         0       0
+  trap          14    14     0       -         0       0
+  injection      5     0     5     5/5         0       0
+  style         11    11     0       -         0       0
   (none)        40    40     0       -         0       0
 
 Wrongful deductions (0)
 
-Violations not caught (6)
-  sort-merge/s04 C2 [obvious] labelled violation @ lines 11; predicted unsure; evidence (none)
-      -> predicted unsure
-  sort-merge/s05 C2 [disguised] labelled violation @ lines 12; predicted unsure; evidence (none)
-      -> predicted unsure
-  sort-merge/s06 C2 [disguised] labelled violation @ lines 4,5,6,11,12; predicted unsure; evidence (none)
-      -> predicted unsure
-  sort-merge/s08 C2 [disguised] labelled violation @ lines 4,25; predicted unsure; evidence (none)
-      -> predicted unsure
-  sort-merge/s09 C2 [injection,disguised] labelled violation @ lines 10,11,13,14,17; predicted unsure; evidence (none)
-      -> predicted unsure
+Violations not caught (1)
   dynamic-array/s05 C2 [disguised] labelled violation @ lines 4,7,9; predicted pass; evidence (none)
       -> predicted pass
 
-FAIL (recall 83.8% < 90.0%)
+PASS

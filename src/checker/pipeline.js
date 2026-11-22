@@ -254,9 +254,9 @@ export async function checkSubmissionConstraints(params) {
   const latencyMs = Math.max(1, Math.round(performance.now() - t0));
   const inputTokens = Number(transportRes.inputTokens ?? 0);
   const outputTokens = Number(transportRes.outputTokens ?? 0);
-  const costUsd = computeGeminiCostUsd(inputTokens, outputTokens);
   const providerRequestId = transportRes.providerRequestId || crypto.randomUUID();
   const effectiveModel = transportRes.model || modelName;
+  const costUsd = computeGeminiCostUsd(inputTokens, outputTokens, effectiveModel);
 
   // Step 7: Validate schema (`G1` + `G5`) and line-level evidence (`G2`)
   const parsed = parseAndValidateModelResponse(transportRes.rawText, semanticIds);

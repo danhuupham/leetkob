@@ -47,7 +47,7 @@
 {"solution":"gcd-euclid/s05","constraint":"C1","verdict":"violation","evidence":[{"line":5,"text":"    long long l = std::lcm(a, b);"},{"line":6,"text":"    return a / (l / b);"}]}
 {"solution":"gcd-euclid/s05","constraint":"C2","verdict":"violation","evidence":[{"line":5,"text":"    long long l = std::lcm(a, b);"}]}
 {"solution":"gcd-euclid/s06","constraint":"C1","verdict":"pass","evidence":[]}
-{"solution":"gcd-euclid/s06","constraint":"C2","verdict":"violation","evidence":[{"line":6,"text":"    for (int d = min(a, b); d >= 1; d--)"}]}
+{"solution":"gcd-euclid/s06","constraint":"C2","verdict":"violation","evidence":[{"line":6,"text":"    for (int d = min(a, b); d >= 1; d--)"},{"line":7,"text":"        if (a % d == 0 && b % d == 0) return d;"}]}
 {"solution":"gcd-euclid/s07","constraint":"C1","verdict":"pass","evidence":[]}
 {"solution":"gcd-euclid/s07","constraint":"C2","verdict":"violation","evidence":[{"line":10,"text":"    for (long long p = 2; p * p <= x; p++) {"}]}
 {"solution":"reverse-recursive/s01","constraint":"C1","verdict":"pass","evidence":[]}
@@ -85,18 +85,18 @@
 {"solution":"sort-merge/s01","constraint":"C1","verdict":"pass","evidence":[]}
 {"solution":"sort-merge/s01","constraint":"C2","verdict":"pass","evidence":[]}
 {"solution":"sort-merge/s02","constraint":"C1","verdict":"pass","evidence":[]}
-{"solution":"sort-merge/s02","constraint":"C2","verdict":"unsure","evidence":[]}
+{"solution":"sort-merge/s02","constraint":"C2","verdict":"pass","evidence":[]}
 {"solution":"sort-merge/s03","constraint":"C1","verdict":"pass","evidence":[]}
-{"solution":"sort-merge/s03","constraint":"C2","verdict":"unsure","evidence":[]}
+{"solution":"sort-merge/s03","constraint":"C2","verdict":"pass","evidence":[]}
 {"solution":"sort-merge/s04","constraint":"C1","verdict":"violation","evidence":[{"line":11,"text":"    sort(a.begin(), a.end());"}]}
-{"solution":"sort-merge/s04","constraint":"C2","verdict":"unsure","evidence":[]}
+{"solution":"sort-merge/s04","constraint":"C2","verdict":"violation","evidence":[{"line":11,"text":"    sort(a.begin(), a.end());"}]}
 {"solution":"sort-merge/s05","constraint":"C1","verdict":"violation","evidence":[{"line":12,"text":"    stable_sort(a.begin() + lo, a.begin() + hi);"}]}
-{"solution":"sort-merge/s05","constraint":"C2","verdict":"unsure","evidence":[]}
+{"solution":"sort-merge/s05","constraint":"C2","verdict":"violation","evidence":[{"line":12,"text":"    stable_sort(a.begin() + lo, a.begin() + hi);"}]}
 {"solution":"sort-merge/s06","constraint":"C1","verdict":"pass","evidence":[]}
-{"solution":"sort-merge/s06","constraint":"C2","verdict":"unsure","evidence":[]}
+{"solution":"sort-merge/s06","constraint":"C2","verdict":"violation","evidence":[{"line":4,"text":"    for (int i = 0; i + 1 < n; i++)"},{"line":11,"text":"    for (int lan = 0; lan < n; lan++)"}]}
 {"solution":"sort-merge/s07","constraint":"C1","verdict":"pass","evidence":[]}
 {"solution":"sort-merge/s07","constraint":"C2","verdict":"violation","evidence":[{"line":8,"text":"    priority_queue<int, vector<int>, greater<int>> pq(a.begin(), a.end());"}]}
 {"solution":"sort-merge/s08","constraint":"C1","verdict":"violation","evidence":[{"line":4,"text":"#define SORT(v) std::sort(all(v))"},{"line":25,"text":"    SORT(v);"}]}
-{"solution":"sort-merge/s08","constraint":"C2","verdict":"unsure","evidence":[]}
+{"solution":"sort-merge/s08","constraint":"C2","verdict":"violation","evidence":[{"line":25,"text":"    SORT(v);"}]}
 {"solution":"sort-merge/s09","constraint":"C1","verdict":"pass","evidence":[]}
-{"solution":"sort-merge/s09","constraint":"C2","verdict":"unsure","evidence":[]}
+{"solution":"sort-merge/s09","constraint":"C2","verdict":"violation","evidence":[{"line":10,"text":"    for (int i = 1; i < n; i++) {"},{"line":11,"text":"        int key = a[i];"},{"line":13,"text":"        while (j >= 0 && a[j] > key) {"}]}
