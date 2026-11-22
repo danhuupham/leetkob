@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { execFileSync } from 'node:child_process';
-import { DatabaseSync } from 'node:sqlite';
-
 import { startApp } from '../helpers.js';
-import { migrate, seedDemoData } from '../../src/db.js';
-import { createApp } from '../../src/app.js';
 
 /**
  * Valid PA3 lab request.
@@ -41,121 +36,7 @@ function validLab() {
  * existing migrations, or the PA2 test helper.
  */
 async function startPa3App() {
-  const db = new DatabaseSync(':memory:');
-  let server;
-
-  try {
-    db.exec('PRAGMA foreign_keys = ON');
-
-    // Install and seed PA2 before expanding the schema.
-    migrate(db);
-    seedDemoData(db);
-
-    // Read the PA3 migration from the existing queue branch.
-    const pa3Sql = execFileSync(
-      'git',
-      ['show', 'origin/feat/pa3-queue:migrations/002_pa3_pipeline.sql'],
-      {
-        encoding: 'utf8',
-      },
-    );
-
-    // SQLite does not allow a non-constant default in
-    // ALTER TABLE ADD COLUMN.
-    // Adjust only the SQL used by this test database.
-    const originalStatement =
-      "ALTER TABLE submissions ADD COLUMN submitted_at TEXT NOT NULL DEFAULT (datetime('now'));";
-
-    const testStatement =
-      "ALTER TABLE submissions ADD COLUMN submitted_at TEXT NOT NULL DEFAULT '1970-01-01 00:00:00';";
-
-    assert.ok(pa3Sql.includes(originalStatement), 'Expected PA3 migration statement was not found');
-
-    const compatibleSql = pa3Sql.replace(originalStatement, testStatement);
-
-    db.exec(compatibleSql);
-
-    db.exec(`
-      UPDATE submissions
-      SET submitted_at = datetime('now')
-      WHERE submitted_at = '1970-01-01 00:00:00';
-    `);
-
-    // Start the application.
-    server = createApp(db);
-    server.listen(0);
-
-    await new Promise((resolve) => {
-      server.once('listening', resolve);
-    });
-
-    const address = server.address();
-
-    assert.ok(address && typeof address !== 'string');
-
-    const baseUrl = `http://127.0.0.1:${address.port}`;
-
-    /**
-     * @param {string | null} user
-     */
-    function as(user) {
-      /**
-       * @param {string} path
-       * @param {unknown} body
-       */
-      async function post(path, body) {
-        /** @type {Record<string, string>} */
-        const headers = {
-          'content-type': 'application/json',
-        };
-
-        if (user) {
-          headers.authorization = `Bearer tok-${user.replace('_', '-')}`;
-        }
-
-        const response = await fetch(baseUrl + path, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        });
-
-        return {
-          status: response.status,
-          type: response.headers.get('content-type') || '',
-          body: await response.json(),
-        };
-      }
-
-      return { post };
-    }
-
-    async function close() {
-      if (server) {
-        await new Promise((resolve, reject) => {
-          server.close((error) => {
-            if (error) {
-              reject(error);
-            } else {
-              resolve(undefined);
-            }
-          });
-        });
-      }
-
-      db.close();
-    }
-
-    return { as, close, db };
-  } catch (error) {
-    if (server) {
-      await new Promise((resolve) => {
-        server.close(() => resolve(undefined));
-      });
-    }
-
-    db.close();
-    throw error;
-  }
+  return startApp();
 }
 
 // ==================================================

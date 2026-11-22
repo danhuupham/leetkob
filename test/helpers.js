@@ -87,6 +87,7 @@ export async function startApp() {
 
   return {
     as,
+    db,
     publishedAt,
     breakDb,
     close: () => new Promise((r) => server.close(() => r(undefined))),

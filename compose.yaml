@@ -1,0 +1,47 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: /data/leetkob.sqlite
+      PORT: 3007
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      MODEL_API_KEY: ${MODEL_API_KEY:-offline-local-placeholder}
+      MODEL_OFF: ${MODEL_OFF:-1}
+    volumes:
+      - leetkob-data:/data
+    ports:
+      - '${PORT:-3007}:3007'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3007/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['node', 'scripts/worker.js']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: /data/leetkob.sqlite
+      MODEL_API_KEY: ${MODEL_API_KEY:-offline-local-placeholder}
+      MODEL_OFF: ${MODEL_OFF:-1}
+      SANDBOX_IMAGE: leetkob-sandbox:latest
+    volumes:
+      - leetkob-data:/data
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  leetkob-data:

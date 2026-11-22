@@ -15,7 +15,7 @@ export function createPublishRoutes(db, auth) {
               (deadline_at <= datetime('now')) AS deadline_passed
        FROM labs WHERE id = ?`,
     ),
-    byLab: db.prepare('SELECT verdict, decision FROM submissions WHERE lab_id = ?'),
+    byLab: db.prepare('SELECT verdict, decision, code FROM submissions WHERE lab_id = ?'),
     publish: db.prepare(
       "UPDATE labs SET published_at = datetime('now') WHERE id = ? AND published_at IS NULL",
     ),
@@ -26,6 +26,30 @@ export function createPublishRoutes(db, auth) {
     idemInsert: db.prepare(
       `INSERT OR IGNORE INTO idempotency_keys (lab_id, key, user_id, published_at)
        VALUES (?, ?, ?, ?)`,
+    ),
+    activeJobs: db.prepare(
+      `SELECT COUNT(*) AS count
+       FROM judge_jobs j
+       JOIN submissions s ON s.id = j.submission_id
+       JOIN labs l ON l.id = s.lab_id
+       WHERE s.lab_id = ?
+         AND j.status IN ('queued', 'running')`,
+    ),
+    pa3Pending: db.prepare(
+      `SELECT COUNT(*) AS count
+       FROM constraint_verdicts cv
+       JOIN submissions s ON s.id = cv.submission_id
+       JOIN labs l ON l.id = s.lab_id
+       WHERE s.lab_id = ?
+         AND s.id = (
+           SELECT MAX(s2.id)
+           FROM submissions s2
+           WHERE s2.lab_id = s.lab_id
+             AND s2.student_id = s.student_id
+             AND s2.submitted_at <= l.deadline_at
+         )
+         AND cv.verdict IN ('violation', 'unsure')
+         AND cv.ta_decision IS NULL`,
     ),
   };
 
@@ -96,10 +120,22 @@ export function createPublishRoutes(db, auth) {
           });
         }
 
+        // Refuse while any judge job is still queued/running.
+        const activeJobs = /** @type {{ count: number }} */ (q.activeJobs.get(lab.id)).count;
+        if (activeJobs > 0) {
+          return problem(res, 409, 'reviews-pending', 'Reviews pending', {
+            detail: `${activeJobs} submission(s) still have queued or running judge jobs`,
+            pending: activeJobs,
+          });
+        }
+
         // Refuse while any violation or unsure review is still pending a TA decision (FAQ-09, FAQ-12 Condition 2).
-        const pending = /** @type {Array<{ verdict: string, decision: string | null }>} */ (
-          q.byLab.all(lab.id)
-        ).filter((s) => needsReview(s.verdict) && !s.decision).length;
+        const legacyPending =
+          /** @type {Array<{ verdict: string, decision: string | null, code: string }>} */ (
+            q.byLab.all(lab.id)
+          ).filter((s) => s.code === '' && needsReview(s.verdict) && !s.decision).length;
+        const pa3Pending = /** @type {{ count: number }} */ (q.pa3Pending.get(lab.id)).count;
+        const pending = legacyPending + pa3Pending;
 
         if (pending > 0) {
           return problem(res, 409, 'reviews-pending', 'Reviews pending', {

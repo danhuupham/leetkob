@@ -45,6 +45,34 @@ To start the local server (`http://localhost:3007`):
 npm start
 ```
 
+## PA#3 Lab Submission Demo
+
+Run the real migration and seed, then start the app:
+
+```bash
+npm run migrate
+npm run seed
+npm start
+```
+
+Open `http://localhost:3007`. Enter a bearer token in the Bearer token field:
+
+- Student: `tok-stu3`
+- TA: `tok-ta-b`
+- Admin: `tok-admin`
+
+Students load Lab 3, submit C++ source, and receive a `202` queued response. TAs load their class labs, inspect the review queue, and publish after the deadline and all reviews are complete. Hidden test inputs and expected outputs are never included by `GET /api/labs/:labId`.
+
+Run Docker deployment assets with:
+
+```bash
+docker build -t leetkob-app .
+docker build -t leetkob-sandbox -f Dockerfile.sandbox .
+docker compose up --build
+```
+
+The app starts migrations automatically. SQLite is stored in the `leetkob-data` volume. The app and worker are separate Compose services. Docker socket access is intentionally not mounted into containers; a host with Docker must provide the judge runtime separately.
+
 ---
 
 ## 2. One Command for Every Check (Local & CI)

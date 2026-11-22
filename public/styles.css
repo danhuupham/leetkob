@@ -7,12 +7,52 @@ body {
   padding: 0 1rem;
 }
 
-li {
-  margin: 0.5rem 0;
-}
-
 button {
   min-height: 44px;
   padding: 0 1rem;
   cursor: pointer;
+}
+
+main {
+  display: grid;
+  gap: 1rem;
+}
+
+.auth,
+#studentPanel,
+#taPanel,
+article {
+  display: grid;
+  gap: 0.75rem;
+}
+
+input,
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  padding: 0.65rem;
+  font: inherit;
+}
+
+textarea {
+  font-family: ui-monospace, Consolas, monospace;
+  resize: vertical;
+}
+
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 0.75rem;
+  background: #f4f4f4;
+}
+
+li {
+  margin: 0.5rem 0;
+}
+
+@media (min-width: 800px) {
+  main {
+    grid-template-columns: 1fr;
+  }
 }

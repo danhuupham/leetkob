@@ -50,7 +50,14 @@ export function problem(res, status, slug, title, extra = {}) {
  */
 export async function readJson(req) {
   let raw = '';
-  for await (const chunk of req) raw += chunk;
+  let bytes = 0;
+  const maxBytes = 1_048_576;
+  for await (const chunk of req) {
+    const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += part.length;
+    if (bytes > maxBytes) return null;
+    raw += part.toString('utf8');
+  }
   if (!raw.trim()) return {};
   try {
     const parsed = JSON.parse(raw);

@@ -69,27 +69,151 @@ export function createSubmissionRoutes(db, auth) {
           return problem(res, 404, 'not-found', 'No such submission');
         }
 
-        // 5. Read PA3 judging status only when this endpoint is called.
-        // This avoids preparing a PA3-only query when PA2 starts.
-        const judgeStatus = db
-          .prepare(
-            `SELECT judge_status
+        const details =
+          /** @type {{ judge_status:string, test_verdict:string, test_results_json:string, manual_mark:number|null, manual_reason:string|null, submitted_at:string, verdict:string, decision:string|null } | undefined} */ (
+            db
+              .prepare(
+                `SELECT
+               judge_status,
+               test_verdict,
+               test_results_json,
+               manual_mark,
+               manual_reason,
+               submitted_at,
+               verdict,
+               decision
              FROM submissions
              WHERE id = ?`,
-          )
-          .get(submissionId);
-        if (!judgeStatus) {
+              )
+              .get(submissionId)
+          );
+        if (!details) {
           return problem(res, 404, 'not-found', 'No such submission');
         }
 
-        // 6. Return only safe status information.
-        // Do not expose grades, deductions, decisions,
-        // or constraint verdicts before Publish.
-        return send(res, 200, {
+        /** @type {unknown[]} */
+        let testResults = [];
+        try {
+          testResults = JSON.parse(details.test_results_json);
+        } catch {
+          testResults = [];
+        }
+
+        /** @type {Record<string, any>} */
+        const response = {
           id: Number(submission.id),
           labId: Number(submission.lab_id),
-          status: judgeStatus.judge_status,
-        });
+          status: details.judge_status,
+          testVerdict: details.test_verdict,
+          testResults,
+          submittedAt: details.submitted_at,
+        };
+
+        const published = submission.published_at !== null;
+        if (!published) {
+          if (isClassStaff) {
+            response.constraintVerdicts = db
+              .prepare(
+                `SELECT constraint_code, verdict, source, unsure_reason,
+                        evidence_json, model_rationale, ta_decision
+                 FROM constraint_verdicts
+                 WHERE submission_id = ?
+                 ORDER BY constraint_code`,
+              )
+              .all(submissionId)
+              .map((v) => ({
+                constraintCode: v.constraint_code,
+                verdict: v.verdict,
+                source: v.source,
+                unsureReason: v.unsure_reason,
+                evidence: /** @type {unknown[]} */ (JSON.parse(String(v.evidence_json))),
+                rationale: v.model_rationale,
+                taDecision: v.ta_decision,
+              }));
+          }
+          return send(res, 200, response);
+        }
+
+        if (isClassStaff) {
+          response.constraintVerdicts = db
+            .prepare(
+              `SELECT cv.constraint_code, cv.verdict, cv.source, cv.unsure_reason,
+                      cv.evidence_json, cv.model_rationale, cv.ta_decision,
+                      lc.rule_text, lc.deduction
+               FROM constraint_verdicts cv
+               JOIN lab_constraints lc
+                 ON lc.lab_id = ? AND lc.constraint_code = cv.constraint_code
+               WHERE cv.submission_id = ?
+               ORDER BY cv.constraint_code`,
+            )
+            .all(submission.lab_id, submissionId)
+            .map((v) => ({
+              constraintCode: v.constraint_code,
+              verdict: v.verdict,
+              source: v.source,
+              unsureReason: v.unsure_reason,
+              evidence: /** @type {unknown[]} */ (JSON.parse(String(v.evidence_json))),
+              rationale: v.model_rationale,
+              taDecision: v.ta_decision,
+              text: v.rule_text,
+              deduction: v.deduction,
+            }));
+        }
+
+        if (details.manual_mark !== null) {
+          response.mark = details.manual_mark;
+          response.manualReason = details.manual_reason;
+          if (isOwner) return send(res, 200, { ...response, constraintVerdicts: undefined });
+        }
+
+        if (isOwner) {
+          const confirmed = db
+            .prepare(
+              `SELECT cv.constraint_code, lc.rule_text, lc.deduction,
+                      cv.evidence_json, cv.verdict, cv.ta_decision
+               FROM constraint_verdicts cv
+               JOIN lab_constraints lc
+                 ON lc.lab_id = ? AND lc.constraint_code = cv.constraint_code
+               WHERE cv.submission_id = ?
+                 AND cv.verdict = 'violation'
+                 AND cv.ta_decision = 'violation'
+               ORDER BY cv.constraint_code`,
+            )
+            .all(submission.lab_id, submissionId);
+
+          const deductions = confirmed.map((v) => ({
+            constraintCode: v.constraint_code,
+            text: v.rule_text,
+            deduction: v.deduction,
+            evidence: /** @type {unknown[]} */ (JSON.parse(String(v.evidence_json))),
+          }));
+
+          let mark = details.manual_mark;
+          if (mark === null) {
+            const unique = new Set();
+            let lost = 0;
+            for (const v of confirmed) {
+              if (!unique.has(v.constraint_code)) {
+                unique.add(v.constraint_code);
+                lost += Number(v.deduction);
+              }
+            }
+            mark = Math.max(0, 10 - lost);
+          }
+          return send(res, 200, {
+            id: response.id,
+            labId: response.labId,
+            status: response.status,
+            testVerdict: response.testVerdict,
+            testResults: response.testResults,
+            submittedAt: response.submittedAt,
+            mark,
+            deductions,
+            ...(details.manual_reason ? { manualReason: details.manual_reason } : {}),
+          });
+        }
+
+        return send(res, 200, response);
       },
     ],
 
@@ -173,9 +297,10 @@ export function createSubmissionRoutes(db, auth) {
                 decision,
                 code,
                 judge_status,
-                test_verdict
+                test_verdict,
+                submitted_at
               )
-              VALUES (?, ?, 'unsure', NULL, ?, 'queued', 'PENDING')
+              VALUES (?, ?, 'unsure', NULL, ?, 'queued', 'PENDING', datetime('now'))
             `,
             )
             .run(labId, me.id, body.code);
