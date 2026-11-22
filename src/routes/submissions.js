@@ -11,13 +11,92 @@ const MAX_CODE_BYTES = 65_536;
  * @returns {import('../http.js').RouteEntry[]}
  */
 export function createSubmissionRoutes(db, auth) {
+  // PA2-compatible query: do not reference PA3-only columns here.
   const findLab = db.prepare(`
     SELECT id, class_id, deadline_at, published_at
     FROM labs
     WHERE id = ?
   `);
 
+  const findSubmission = db.prepare(`
+    SELECT
+      s.id,
+      s.lab_id,
+      s.student_id,
+      l.class_id,
+      l.published_at
+    FROM submissions s
+    JOIN labs l ON l.id = s.lab_id
+    WHERE s.id = ?
+  `);
+
   return [
+    // --------------------------------------------------
+    // GET /api/submissions/:id
+    // View submission status with authorization checks.
+    // --------------------------------------------------
+    [
+      'GET',
+      '/api/submissions/:id',
+      (req, res, params) => {
+        // 1. Authentication
+        const me = auth.requireAuth(req, res);
+        if (!me) return;
+
+        // 2. Validate submission ID
+        const submissionId = parsePositiveInt(params.id);
+
+        if (submissionId === null) {
+          return problem(res, 404, 'not-found', 'No such submission');
+        }
+
+        // 3. Find submission and its class
+        const submission = findSubmission.get(submissionId);
+
+        if (!submission) {
+          return problem(res, 404, 'not-found', 'No such submission');
+        }
+
+        const classId = Number(submission.class_id);
+        const studentId = Number(submission.student_id);
+
+        // 4. Check ownership or staff authorization
+        const isOwner = me.role === 'student' && me.id === studentId;
+
+        const isClassStaff = me.role !== 'student' && auth.isStaff(me, classId);
+
+        if (!isOwner && !isClassStaff) {
+          return problem(res, 404, 'not-found', 'No such submission');
+        }
+
+        // 5. Read PA3 judging status only when this endpoint is called.
+        // This avoids preparing a PA3-only query when PA2 starts.
+        const judgeStatus = db
+          .prepare(
+            `SELECT judge_status
+             FROM submissions
+             WHERE id = ?`,
+          )
+          .get(submissionId);
+        if (!judgeStatus) {
+          return problem(res, 404, 'not-found', 'No such submission');
+        }
+
+        // 6. Return only safe status information.
+        // Do not expose grades, deductions, decisions,
+        // or constraint verdicts before Publish.
+        return send(res, 200, {
+          id: Number(submission.id),
+          labId: Number(submission.lab_id),
+          status: judgeStatus.judge_status,
+        });
+      },
+    ],
+
+    // --------------------------------------------------
+    // POST /api/labs/:labId/submissions
+    // Create a submission and enqueue a judge job.
+    // --------------------------------------------------
     [
       'POST',
       '/api/labs/:labId/submissions',
@@ -28,7 +107,6 @@ export function createSubmissionRoutes(db, auth) {
 
         // 2. Find lab
         const labId = parsePositiveInt(params.labId);
-
         const lab = labId === null ? undefined : findLab.get(labId);
 
         if (!lab) {
