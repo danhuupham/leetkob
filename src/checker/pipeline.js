@@ -31,7 +31,7 @@ import {
  *
  * @typedef {{
  *   rawText: string,
- *   providerRequestId?: string,
+ *   providerRequestId?: string | null,
  *   model?: string,
  *   inputTokens?: number,
  *   outputTokens?: number
@@ -39,6 +39,7 @@ import {
  *
  * @typedef {{
  *   providerRequestId: string | null,
+ *   missingProviderRequestId: boolean,
  *   model: string,
  *   constraintCodes: string[],
  *   sanitizedPrompt: string,
@@ -171,6 +172,7 @@ export async function checkSubmissionConstraints(params) {
     if (callLogWriter) {
       await callLogWriter({
         providerRequestId: null,
+        missingProviderRequestId: false,
         model: modelName,
         constraintCodes: semanticIds,
         sanitizedPrompt: '',
@@ -228,6 +230,7 @@ export async function checkSubmissionConstraints(params) {
     if (callLogWriter) {
       await callLogWriter({
         providerRequestId: null,
+        missingProviderRequestId: false,
         model: modelName,
         constraintCodes: semanticIds,
         sanitizedPrompt: prompt,
@@ -254,7 +257,10 @@ export async function checkSubmissionConstraints(params) {
   const latencyMs = Math.max(1, Math.round(performance.now() - t0));
   const inputTokens = Number(transportRes.inputTokens ?? 0);
   const outputTokens = Number(transportRes.outputTokens ?? 0);
-  const providerRequestId = transportRes.providerRequestId || crypto.randomUUID();
+  const rawProviderRequestId =
+    typeof transportRes.providerRequestId === 'string' ? transportRes.providerRequestId.trim() : '';
+  const providerRequestId = rawProviderRequestId || null;
+  const missingProviderRequestId = providerRequestId === null;
   const effectiveModel = transportRes.model || modelName;
   const costUsd = computeGeminiCostUsd(inputTokens, outputTokens, effectiveModel);
 
@@ -264,6 +270,7 @@ export async function checkSubmissionConstraints(params) {
   if (callLogWriter) {
     await callLogWriter({
       providerRequestId,
+      missingProviderRequestId,
       model: effectiveModel,
       constraintCodes: semanticIds,
       sanitizedPrompt: prompt,

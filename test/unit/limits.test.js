@@ -356,3 +356,65 @@ test('G5 strips arbitrary injected keys via allowlist and G1 permits backticks i
   assert.equal('override' in res[0], false);
   assert.deepEqual(res[0].evidence, [{ line: 3, text: '  const char* s = "```";' }]);
 });
+
+test('callGeminiModel and pipeline store null providerRequestId and flag missing ids instead of inventing UUIDs', async () => {
+  const noIdRes = await callGeminiModel({
+    prompt: 'check prompt',
+    modelName: 'gemini-3-flash-preview',
+    modelApiKey: 'test-key-no-req-id',
+    signal: new AbortController().signal,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      text: async () =>
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: '{"results":[]}' }] } }],
+          usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20 },
+        }),
+    }),
+  });
+  assert.equal(noIdRes.providerRequestId, null);
+
+  const validJson = JSON.stringify({
+    results: [{ constraint: 'C2', verdict: 'pass', evidence: [], rationale: 'OK' }],
+  });
+
+  /** @type {Array<{ providerRequestId: string | null, missingProviderRequestId?: boolean }>} */
+  const logs = [];
+
+  await checkSubmissionConstraints({
+    statement: SAMPLE_STATEMENT,
+    constraints: [SAMPLE_CONSTRAINTS[1]],
+    code: SAMPLE_CPP,
+    llmTransport: async () => ({
+      rawText: validJson,
+      inputTokens: 100,
+      outputTokens: 20,
+    }),
+    callLogWriter: (entry) => {
+      logs.push(entry);
+    },
+  });
+
+  await checkSubmissionConstraints({
+    statement: SAMPLE_STATEMENT,
+    constraints: [SAMPLE_CONSTRAINTS[1]],
+    code: SAMPLE_CPP,
+    llmTransport: async () => ({
+      rawText: validJson,
+      providerRequestId: 'goog-req-ok',
+      inputTokens: 100,
+      outputTokens: 20,
+    }),
+    callLogWriter: (entry) => {
+      logs.push(entry);
+    },
+  });
+
+  assert.equal(logs.length, 2);
+  assert.equal(logs[0].providerRequestId, null);
+  assert.equal(logs[0].missingProviderRequestId, true);
+  assert.equal(logs[1].providerRequestId, 'goog-req-ok');
+  assert.equal(logs[1].missingProviderRequestId, false);
+});
