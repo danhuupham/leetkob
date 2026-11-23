@@ -39,24 +39,33 @@ npx playwright install chromium        # On Ubuntu/Debian CI: npx playwright ins
 npm run e2e
 ```
 
-To start the local server (`http://localhost:3007`):
+To build the Vite React frontend and start the local server (`http://localhost:3007`):
 
 ```bash
+npm run build
 npm start
+```
+
+For Vite hot-module-reload frontend development (`http://localhost:5173` proxying `/api` to `:3007`):
+
+```bash
+npm start        # Terminal 1: HTTP API server (:3007)
+npm run dev:web  # Terminal 2: Vite dev server (:5173)
 ```
 
 ## PA#3 Lab Submission Demo
 
-Run the real migration and seed, then start the HTTP server and separate judge worker in two terminals:
+Run the real migration, seed, and frontend build, then start the HTTP server and separate judge worker in two terminals:
 
 ```bash
+npm run build
 npm run migrate
 npm run seed
 npm start        # Terminal 1: HTTP server
 npm run worker   # Terminal 2: separate durable judge worker
 ```
 
-Open `http://localhost:3007`. Enter a bearer token in the Bearer token field:
+Open `http://localhost:3007`. Choose a seeded demo account from **Signed in as** (or paste a bearer token in **Custom token**):
 
 - Student: `tok-stu3`
 - TA: `tok-ta-b`

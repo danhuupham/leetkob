@@ -33,3 +33,37 @@ export function markFor(verdicts) {
 export function needsReview(verdict) {
   return verdict === 'violation' || verdict === 'unsure';
 }
+
+/**
+ * Computes final published mark and confirmed deduction list for a submission (FAQ-04, FAQ-11).
+ *
+ * @param {{
+ *   manualMark: number | null,
+ *   testVerdict: string,
+ *   confirmedViolations: Array<{ constraintCode: string, text: string, deduction: number, evidence: unknown[] }>
+ * }} params
+ * @returns {{ mark: number, deductions: Array<{ constraintCode: string, text: string, deduction: number, evidence: unknown[] }> }}
+ */
+export function computePublishedGrade({ manualMark, testVerdict, confirmedViolations }) {
+  if (manualMark !== null) {
+    return { mark: Number(manualMark), deductions: [] };
+  }
+  if (testVerdict !== 'AC') {
+    return { mark: 0, deductions: [] };
+  }
+  const deductions = confirmedViolations.map((v) => ({
+    constraintCode: v.constraintCode,
+    text: v.text,
+    deduction: Number(v.deduction),
+    evidence: v.evidence,
+  }));
+  const mark = markFor(
+    confirmedViolations.map((v) => ({
+      verdict: 'violation',
+      decision: 'confirm',
+      deduction: Number(v.deduction),
+      constraintId: String(v.constraintCode),
+    })),
+  );
+  return { mark, deductions };
+}

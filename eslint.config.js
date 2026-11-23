@@ -2,6 +2,7 @@ export default [
   {
     ignores: [
       'node_modules/**',
+      'public/**',
       'leetkob-eval/**',
       'playwright-report/**',
       'test-results/**',

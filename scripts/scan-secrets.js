@@ -7,7 +7,15 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const SKIP = new Set(['.git', 'node_modules', 'test', 'playwright-report', 'test-results', 'data']);
+const SKIP = new Set([
+  '.git',
+  'node_modules',
+  'public',
+  'test',
+  'playwright-report',
+  'test-results',
+  'data',
+]);
 const FORBIDDEN_TRACKED = new Set(['.env', 'marking.env', 'ACCESS.md']);
 
 /** @type {Array<[string, RegExp]>} */
