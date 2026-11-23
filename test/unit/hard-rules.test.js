@@ -261,6 +261,42 @@ test('AC4: catches using-namespace, namespace aliases, macros, typedef/using, an
   );
 });
 
+test('AC4b: ignores unused #define macros whose body names a banned target', async () => {
+  const sortConstraint = {
+    id: 'C1',
+    text: 'Do not call a library sort function: `std::sort`, `std::stable_sort`.',
+  };
+  const unusedSortMacroCode = [
+    '#include <algorithm>',
+    '#include <vector>',
+    '#define UNUSED_SORT(v) std::sort((v).begin(), (v).end())',
+    'int main() {',
+    '  std::vector<int> v = {2, 1};',
+    '  return (int)v.size();',
+    '}',
+  ].join('\n');
+  assert.deepEqual(await evaluateHardRule(sortConstraint, unusedSortMacroCode), {
+    verdict: 'pass',
+    evidence: [],
+  });
+
+  const loopConstraint = {
+    id: 'C1',
+    text: 'Do not use loop statements: `for`, `while`, `do`-`while`, range-based `for`, or `goto`.',
+  };
+  const unusedLoopMacroCode = [
+    '#define UNUSED_LOOP(n) for (int i = 0; i < (n); ++i)',
+    'int sumRec(int n) {',
+    '  return n <= 0 ? 0 : n + sumRec(n - 1);',
+    '}',
+    'int main() { return sumRec(3); }',
+  ].join('\n');
+  assert.deepEqual(await evaluateHardRule(loopConstraint, unusedLoopMacroCode), {
+    verdict: 'pass',
+    evidence: [],
+  });
+});
+
 test('AC5: loop keyword bans catch range-for, while, do-while, goto, and macro loops without false positives', async () => {
   const loopConstraint = {
     id: 'C1',
