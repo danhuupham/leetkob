@@ -597,3 +597,99 @@ test('createWorkerConstraintChecker persists model_calls, atomically updates lab
     db.close();
   }
 });
+
+test('Class 1 includes third student stu4 and GET /api/labs/:labId/queue exposes supersededSubmissions alongside counted submissions', async () => {
+  const app = await startPa3();
+  try {
+    const meStu4 = await app.as('tok-stu4').get('/api/me');
+    assert.equal(meStu4.status, 200);
+    assert.equal(meStu4.body.name, 'stu4');
+    assert.equal(meStu4.body.role, 'student');
+    assert.deepEqual(meStu4.body.classes, [1]);
+
+    const lab1Res = await app.as('tok-stu4').get('/api/labs/1');
+    assert.equal(lab1Res.status, 200);
+    const lab3Res = await app.as('tok-stu4').get('/api/labs/3');
+    assert.equal(lab3Res.status, 404);
+
+    app.db
+      .prepare(
+        `INSERT INTO lab_constraints (lab_id, constraint_code, rule_text, deduction)
+         VALUES (1, 'C1', 'Do not use std::sort', 3),
+                (1, 'C2', 'Implement merge sort', 4)`,
+      )
+      .run();
+
+    const oldSub = Number(
+      app.db
+        .prepare(
+          `INSERT INTO submissions
+             (lab_id, student_id, verdict, decision, code, judge_status, test_verdict, submitted_at)
+           VALUES (1, 4, 'violation', NULL, 'int main() { std::sort(); }', 'done', 'AC', '2026-10-31 10:00:00')`,
+        )
+        .run().lastInsertRowid,
+    );
+    app.db
+      .prepare(
+        `INSERT INTO constraint_verdicts (submission_id, constraint_code, verdict, source, evidence_json)
+         VALUES (?, 'C1', 'violation', 'hard_rule', '[{"line":1,"text":"int main() { std::sort(); }"}]')`,
+      )
+      .run(oldSub);
+
+    const newSub = Number(
+      app.db
+        .prepare(
+          `INSERT INTO submissions
+             (lab_id, student_id, verdict, decision, code, judge_status, test_verdict, submitted_at)
+           VALUES (1, 4, 'pass', NULL, 'int main() { return 0; }', 'done', 'AC', '2026-10-31 20:00:00')`,
+        )
+        .run().lastInsertRowid,
+    );
+    app.db
+      .prepare(
+        `INSERT INTO constraint_verdicts (submission_id, constraint_code, verdict, source, evidence_json)
+         VALUES (?, 'C1', 'pass', 'hard_rule', '[]'),
+                (?, 'C2', 'pass', 'model', '[]')`,
+      )
+      .run(newSub, newSub);
+
+    const stu2Sub = Number(
+      app.db
+        .prepare(
+          `INSERT INTO submissions
+             (lab_id, student_id, verdict, decision, code, judge_status, test_verdict, submitted_at)
+           VALUES (1, 5, 'pass', NULL, 'int main() { return 0; }', 'done', 'AC', '2026-10-31 22:00:00')`,
+        )
+        .run().lastInsertRowid,
+    );
+    app.db
+      .prepare(
+        `INSERT INTO constraint_verdicts (submission_id, constraint_code, verdict, source, evidence_json)
+         VALUES (?, 'C1', 'pass', 'hard_rule', '[]'),
+                (?, 'C2', 'pass', 'model', '[]')`,
+      )
+      .run(stu2Sub, stu2Sub);
+
+    const queueRes = await app.as('tok-ta-a').get('/api/labs/1/queue');
+    assert.equal(queueRes.status, 200);
+    assert.deepEqual(
+      queueRes.body.submissions.map((s) => s.id),
+      [newSub, stu2Sub],
+    );
+    assert.equal(queueRes.body.items.filter((i) => i.verdictId !== undefined).length, 0);
+
+    assert.ok(Array.isArray(queueRes.body.supersededSubmissions));
+    assert.equal(queueRes.body.supersededSubmissions.length, 1);
+    const sup = queueRes.body.supersededSubmissions[0];
+    assert.equal(sup.id, oldSub);
+    assert.equal(sup.student, 'stu1');
+    assert.equal(sup.verdicts.length, 1);
+    assert.equal(sup.verdicts[0].constraintCode, 'C1');
+    assert.equal(sup.verdicts[0].verdict, 'violation');
+    assert.equal(sup.verdicts[0].source, 'hard_rule');
+    assert.equal(sup.verdicts[0].deduction, 3);
+    assert.deepEqual(sup.verdicts[0].evidence, [{ line: 1, text: 'int main() { std::sort(); }' }]);
+  } finally {
+    await app.close();
+  }
+});

@@ -131,6 +131,7 @@ export interface QueueResponse {
   costSpentUsd: number;
   items: QueueItem[];
   submissions: CountedSubmission[];
+  supersededSubmissions?: CountedSubmission[];
 }
 
 export interface SubmissionRecord {
