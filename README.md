@@ -58,7 +58,7 @@ Every check runs with one documented command locally and in GitHub Actions (`.gi
 | **Auto-format** | `npm run format` | `prettier --write .` (Prettier 3; excludes `leetkob-eval/` and `*.md`) |
 | **Format check** | `npm run format:check` | `prettier --check .` (Prettier 3) |
 | **Type check** | `npm run typecheck` | `tsc --noEmit` (TypeScript 7 with `checkJs: true`, `strict: true`) |
-| **Unit tests** | `npm test` | `node --test --test-reporter=spec "test/unit/**/*.test.js"` (8 unit tests) |
+| **Unit tests** | `npm test` | `node --test --test-reporter=spec "test/unit/**/*.test.js"` (25 unit tests) |
 | **Contract tests** | `npm run contract` | `node --test --test-reporter=spec "test/contract/**/*.test.js"` (22 contract tests) |
 | **Secret scan (tree + history)** | `npm run scan` | `node scripts/scan-secrets.js` (scans working tree & `git log -p --all`) |
 | **Eval dataset SHA-256 check** | `npm run verify:eval` | `node scripts/verify-eval.js` (verifies byte-for-byte SHA-256 of `leetkob-eval/`) |

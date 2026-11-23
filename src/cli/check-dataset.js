@@ -201,7 +201,11 @@ export async function runDatasetChecker(opts) {
   const resolvedApiKey =
     modelConfig?.modelApiKey ?? process.env.MODEL_API_KEY ?? config.modelApiKey;
 
-  if (!modelOff && !llmTransport && !String(resolvedApiKey || '').trim()) {
+  const configuredKeys = String(resolvedApiKey || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
+  if (!modelOff && !llmTransport && configuredKeys.length === 0) {
     throw new Error(
       'MODEL_API_KEY is required when MODEL_OFF is not set to 1 (set MODEL_OFF=1 for offline hard-rules-only evaluation)',
     );

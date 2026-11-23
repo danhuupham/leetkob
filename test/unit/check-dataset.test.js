@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -75,23 +76,33 @@ test('runDatasetChecker supports MODEL_OFF=1, --out file & stdout, fails fast wi
     const lines = readFileSync(outFile, 'utf8').trim().split('\n');
     assert.equal(lines.length, 12);
 
-    // Fail fast when MODEL_OFF is false and MODEL_API_KEY is missing
+    // Fail fast when MODEL_OFF is false and MODEL_API_KEY is missing or comma-only
     const prevKey = process.env.MODEL_API_KEY;
     delete process.env.MODEL_API_KEY;
     try {
-      await assert.rejects(
-        () =>
-          runDatasetChecker({
-            dataDir: 'eval/custom-cases',
-            outPath: outFile,
-            modelOff: false,
-            modelConfig: { modelApiKey: '' },
-          }),
-        /MODEL_API_KEY is required/,
-      );
+      for (const emptyKey of ['', ' , ']) {
+        await assert.rejects(
+          () =>
+            runDatasetChecker({
+              dataDir: 'eval/custom-cases',
+              outPath: outFile,
+              modelOff: false,
+              modelConfig: { modelApiKey: emptyKey },
+            }),
+          /MODEL_API_KEY is required/,
+        );
+      }
     } finally {
       if (prevKey !== undefined) process.env.MODEL_API_KEY = prevKey;
     }
+
+    // --out '-' writes valid JSONL lines directly to stdout
+    const stdoutText = execFileSync(
+      process.execPath,
+      ['src/cli/check-dataset.js', '--data', 'eval/custom-cases', '--out', '-'],
+      { env: { ...process.env, NODE_ENV: 'test', MODEL_OFF: '1' }, encoding: 'utf8' },
+    );
+    assert.equal(stdoutText.trim().split('\n').length, 12);
 
     // modelConfig with undefined modelName must NOT overwrite resolved modelName
     /** @type {string[]} */
@@ -234,4 +245,83 @@ test('callGeminiModel rotates keys on daily 429 with expiring TTL cooldown, slee
     elapsed >= 100,
     `Expected 503 backoff sleep >= 100ms across 2 retries, got ${elapsed}ms`,
   );
+});
+
+test('callGeminiModel advances key cursor past cooled-down keys on 429 RPM and honors RetryInfo retryDelay', async () => {
+  resetKeyCooldowns();
+
+  // Put k1 into cooldown with RetryInfo.retryDelay overriding a long fallback cooldown
+  await assert.rejects(
+    () =>
+      callGeminiModel({
+        prompt: 'seed-k1-daily',
+        modelName: 'gemini-3.8-flash',
+        modelApiKey: 'k1',
+        signal: new AbortController().signal,
+        dailyQuotaCooldownMs: 60_000,
+        baseBackoffMs: 0,
+        fetchImpl: async () => ({
+          ok: false,
+          status: 429,
+          text: async () =>
+            '{"error":{"message":"GenerateRequestsPerDay exceeded","details":[{"retryDelay":"0.04s"}]}}',
+        }),
+      }),
+    /HTTP 429/,
+  );
+
+  // With k1 in cooldown and k2 hitting 429 RPM, cursor must advance directly to k3 (never repeat k2)
+  /** @type {string[]} */
+  const sequence = [];
+  const resRpm = await callGeminiModel({
+    prompt: 'test-rpm-cursor',
+    modelName: 'gemini-3.8-flash',
+    modelApiKey: 'k1,k2,k3',
+    signal: new AbortController().signal,
+    baseBackoffMs: 0,
+    fetchImpl: async (_url, init) => {
+      const k = /** @type {Record<string, string>} */ (init?.headers ?? {})['x-goog-api-key'];
+      sequence.push(k);
+      if (k === 'k2') {
+        return {
+          ok: false,
+          status: 429,
+          text: async () => '{"error":{"message":"Rate limit exceeded"}}',
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => `req-${k}` },
+        text: async () =>
+          JSON.stringify({
+            candidates: [{ content: { parts: [{ text: '{"results":[]}' }] } }],
+            usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+          }),
+      };
+    },
+  });
+  assert.deepEqual(sequence, ['k2', 'k3']);
+  assert.equal(resRpm.providerRequestId, 'req-k3');
+
+  // After 60ms (> 0.04s retryDelay), k1 must automatically recover even though fallback was 60_000ms
+  await new Promise((r) => setTimeout(r, 60));
+  const resRecovered = await callGeminiModel({
+    prompt: 'test-retry-delay-expiry',
+    modelName: 'gemini-3.8-flash',
+    modelApiKey: 'k1',
+    signal: new AbortController().signal,
+    baseBackoffMs: 0,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'req-k1-after-retrydelay' },
+      text: async () =>
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: '{"results":[]}' }] } }],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+        }),
+    }),
+  });
+  assert.equal(resRecovered.providerRequestId, 'req-k1-after-retrydelay');
 });

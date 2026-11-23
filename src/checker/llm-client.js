@@ -213,12 +213,13 @@ export async function callGeminiModel({
   let rawBody = '';
   /** @type {Set<string>} */
   const rpmTriedKeys = new Set();
+  let cursor = startOffset;
 
   for (let attempt = 0; attempt < effectiveMaxAttempts; attempt += 1) {
     const now = Date.now();
     /** @type {string | null} */
     let currentKey = null;
-    let keyIndex = startOffset;
+    let keyIndex = cursor;
     if (keys.length === 1) {
       if (isKeyExhausted(keys[0], now)) {
         throw Object.assign(new Error('Gemini API HTTP 429 (configured key in daily cooldown)'), {
@@ -228,12 +229,23 @@ export async function callGeminiModel({
       currentKey = keys[0];
     } else {
       for (let step = 0; step < keys.length; step += 1) {
-        const candidateIdx = (startOffset + attempt + step) % keys.length;
+        const candidateIdx = (cursor + step) % keys.length;
         const candidate = keys[candidateIdx];
-        if (!isKeyExhausted(candidate, now)) {
+        if (!isKeyExhausted(candidate, now) && !rpmTriedKeys.has(candidate)) {
           currentKey = candidate;
           keyIndex = candidateIdx;
           break;
+        }
+      }
+      if (!currentKey) {
+        for (let step = 0; step < keys.length; step += 1) {
+          const candidateIdx = (cursor + step) % keys.length;
+          const candidate = keys[candidateIdx];
+          if (!isKeyExhausted(candidate, now)) {
+            currentKey = candidate;
+            keyIndex = candidateIdx;
+            break;
+          }
         }
       }
       if (!currentKey) {
@@ -241,6 +253,7 @@ export async function callGeminiModel({
           status: 429,
         });
       }
+      cursor = (keyIndex + 1) % keys.length;
     }
 
     res = await fetchImpl(url, {
@@ -289,7 +302,7 @@ export async function callGeminiModel({
         (k) => !rpmTriedKeys.has(k) && !isKeyExhausted(k, Date.now()),
       );
       if (hasUntriedKey) {
-        activeKeyOffset = (keyIndex + 1) % keys.length;
+        activeKeyOffset = cursor;
         continue;
       }
       rpmTriedKeys.clear();
