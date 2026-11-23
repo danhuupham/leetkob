@@ -1,6 +1,6 @@
 import { send, problem, readJson } from '../http.js';
 import { parsePositiveInt } from '../auth.js';
-import { computePublishedGrade, needsReview } from '../grades.js';
+import { computePublishedGrade } from '../grades.js';
 
 export const FAQ_06_REVIEW_NOTICE =
   'Accepted C++ submissions are checked by deterministic hard rules and an AI model. The model receives only the problem statement, constraint text, and code with comments, student names, and student IDs removed. The model never decides marks — a TA reviews flagged verdicts before grades are published.';
@@ -60,12 +60,11 @@ export function createLabRoutes(db, auth) {
       JOIN enrollments e ON e.class_id = l.class_id AND e.user_id = ?
       ORDER BY l.class_id ASC, l.id ASC
     `),
-    countedSubmissionCount: db.prepare(`
-      SELECT COUNT(*) AS count
+    allCountedSubmissionCounts: db.prepare(`
+      SELECT s.lab_id, COUNT(*) AS count
       FROM submissions s
       JOIN labs l ON l.id = s.lab_id
-      WHERE s.lab_id = ?
-        AND s.code != ''
+      WHERE s.code != ''
         AND s.id = (
           SELECT MAX(s2.id)
           FROM submissions s2
@@ -73,19 +72,22 @@ export function createLabRoutes(db, auth) {
             AND s2.student_id = s.student_id
             AND s2.submitted_at <= l.deadline_at
         )
+      GROUP BY s.lab_id
     `),
-    legacyPendingRows: db.prepare(`
-      SELECT verdict, decision
+    allLegacyPendingCounts: db.prepare(`
+      SELECT lab_id, COUNT(*) AS count
       FROM submissions
-      WHERE lab_id = ? AND code = ''
+      WHERE code = ''
+        AND verdict IN ('violation', 'unsure')
+        AND decision IS NULL
+      GROUP BY lab_id
     `),
-    pa3PendingCount: db.prepare(`
-      SELECT COUNT(*) AS count
+    allPa3PendingCounts: db.prepare(`
+      SELECT s.lab_id, COUNT(*) AS count
       FROM constraint_verdicts cv
       JOIN submissions s ON s.id = cv.submission_id
       JOIN labs l ON l.id = s.lab_id
-      WHERE s.lab_id = ?
-        AND s.test_verdict = 'AC'
+      WHERE s.test_verdict = 'AC'
         AND s.id = (
           SELECT MAX(s2.id)
           FROM submissions s2
@@ -95,31 +97,50 @@ export function createLabRoutes(db, auth) {
         )
         AND cv.verdict IN ('violation', 'unsure')
         AND cv.ta_decision IS NULL
+      GROUP BY s.lab_id
     `),
-    studentLatestSubmission: db.prepare(`
-      SELECT id, judge_status, test_verdict, submitted_at, manual_mark
+    studentLatestByLab: db.prepare(`
+      SELECT lab_id, id, judge_status, test_verdict, submitted_at, manual_mark
       FROM submissions
-      WHERE lab_id = ? AND student_id = ?
-      ORDER BY id DESC
-      LIMIT 1
+      WHERE student_id = ?
+        AND id IN (
+          SELECT MAX(id)
+          FROM submissions
+          WHERE student_id = ?
+          GROUP BY lab_id
+        )
     `),
-    studentCountedSubmission: db.prepare(`
-      SELECT s.id, s.test_verdict, s.manual_mark
+    studentPublishedCountedByLab: db.prepare(`
+      SELECT s.lab_id, s.id, s.test_verdict, s.manual_mark
       FROM submissions s
       JOIN labs l ON l.id = s.lab_id
-      WHERE s.lab_id = ?
-        AND s.student_id = ?
-        AND s.submitted_at <= l.deadline_at
-      ORDER BY s.id DESC
-      LIMIT 1
+      WHERE s.student_id = ?
+        AND l.published_at IS NOT NULL
+        AND s.id = (
+          SELECT MAX(s2.id)
+          FROM submissions s2
+          WHERE s2.lab_id = s.lab_id
+            AND s2.student_id = s.student_id
+            AND s2.submitted_at <= l.deadline_at
+        )
     `),
-    confirmedViolations: db.prepare(`
-      SELECT cv.constraint_code, lc.rule_text, lc.deduction
+    studentPublishedViolationsByLab: db.prepare(`
+      SELECT s.lab_id, cv.constraint_code, lc.rule_text, lc.deduction
       FROM constraint_verdicts cv
+      JOIN submissions s ON s.id = cv.submission_id
+      JOIN labs l ON l.id = s.lab_id
       JOIN lab_constraints lc
-        ON lc.lab_id = ? AND lc.constraint_code = cv.constraint_code
-      WHERE cv.submission_id = ?
+        ON lc.lab_id = s.lab_id AND lc.constraint_code = cv.constraint_code
+      WHERE s.student_id = ?
+        AND l.published_at IS NOT NULL
         AND cv.ta_decision = 'violation'
+        AND s.id = (
+          SELECT MAX(s2.id)
+          FROM submissions s2
+          WHERE s2.lab_id = s.lab_id
+            AND s2.student_id = s.student_id
+            AND s2.submitted_at <= l.deadline_at
+        )
       ORDER BY cv.constraint_code
     `),
     findLab: db.prepare(`
@@ -189,6 +210,61 @@ export function createLabRoutes(db, auth) {
               : q.listStudentLabs.all(me.id)
         );
 
+        /** @type {Map<number, number>} */
+        const countedMap = new Map();
+        /** @type {Map<number, number>} */
+        const legacyPendingMap = new Map();
+        /** @type {Map<number, number>} */
+        const pa3PendingMap = new Map();
+        /** @type {Map<number, { id: number, judge_status: string, test_verdict: string, submitted_at: string }>} */
+        const studentLatestMap = new Map();
+        /** @type {Map<number, { id: number, test_verdict: string, manual_mark: number | null }>} */
+        const studentCountedMap = new Map();
+        /** @type {Map<number, Array<{ constraintCode: string, text: string, deduction: number, evidence: unknown[] }>>} */
+        const studentViolationsMap = new Map();
+
+        if (me.role !== 'student') {
+          for (const r of /** @type {Array<{ lab_id: number, count: number }>} */ (
+            q.allCountedSubmissionCounts.all()
+          )) {
+            countedMap.set(Number(r.lab_id), Number(r.count));
+          }
+          for (const r of /** @type {Array<{ lab_id: number, count: number }>} */ (
+            q.allLegacyPendingCounts.all()
+          )) {
+            legacyPendingMap.set(Number(r.lab_id), Number(r.count));
+          }
+          for (const r of /** @type {Array<{ lab_id: number, count: number }>} */ (
+            q.allPa3PendingCounts.all()
+          )) {
+            pa3PendingMap.set(Number(r.lab_id), Number(r.count));
+          }
+        } else {
+          for (const r of /** @type {Array<{ lab_id: number, id: number, judge_status: string, test_verdict: string, submitted_at: string }>} */ (
+            q.studentLatestByLab.all(me.id, me.id)
+          )) {
+            studentLatestMap.set(Number(r.lab_id), r);
+          }
+          for (const r of /** @type {Array<{ lab_id: number, id: number, test_verdict: string, manual_mark: number | null }>} */ (
+            q.studentPublishedCountedByLab.all(me.id)
+          )) {
+            studentCountedMap.set(Number(r.lab_id), r);
+          }
+          for (const r of /** @type {Array<{ lab_id: number, constraint_code: string, rule_text: string, deduction: number }>} */ (
+            q.studentPublishedViolationsByLab.all(me.id)
+          )) {
+            const lid = Number(r.lab_id);
+            const arr = studentViolationsMap.get(lid) ?? [];
+            arr.push({
+              constraintCode: r.constraint_code,
+              text: r.rule_text,
+              deduction: Number(r.deduction),
+              evidence: [],
+            });
+            studentViolationsMap.set(lid, arr);
+          }
+        }
+
         const labs = rows.map((row) => {
           const labId = Number(row.id);
           /** @type {Record<string, unknown>} */
@@ -207,26 +283,14 @@ export function createLabRoutes(db, auth) {
           };
 
           if (me.role !== 'student') {
-            const legacyPending =
-              /** @type {Array<{ verdict: string, decision: string | null }>} */ (
-                q.legacyPendingRows.all(labId)
-              ).filter((s) => needsReview(s.verdict) && !s.decision).length;
-            const pa3Pending = /** @type {{ count: number }} */ (q.pa3PendingCount.get(labId))
-              .count;
-            const submissionCount = /** @type {{ count: number }} */ (
-              q.countedSubmissionCount.get(labId)
-            ).count;
-
             item.costSpentUsd = Number(row.cost_spent_usd ?? 0);
-            item.submissionCount = Number(submissionCount);
-            item.pendingReviews = legacyPending + Number(pa3Pending);
+            item.submissionCount = countedMap.get(labId) ?? 0;
+            item.pendingReviews =
+              (legacyPendingMap.get(labId) ?? 0) + (pa3PendingMap.get(labId) ?? 0);
             return item;
           }
 
-          const latest =
-            /** @type {{ id: number, judge_status: string, test_verdict: string, submitted_at: string, manual_mark: number | null } | undefined} */ (
-              q.studentLatestSubmission.get(labId, me.id)
-            );
+          const latest = studentLatestMap.get(labId);
           if (!latest) {
             item.latestSubmission = null;
             return item;
@@ -241,24 +305,12 @@ export function createLabRoutes(db, auth) {
           };
 
           if (row.published_at !== null) {
-            const counted =
-              /** @type {{ id: number, test_verdict: string, manual_mark: number | null } | undefined} */ (
-                q.studentCountedSubmission.get(labId, me.id)
-              );
+            const counted = studentCountedMap.get(labId);
             if (counted) {
-              const violations =
-                /** @type {Array<{ constraint_code: string, rule_text: string, deduction: number }>} */ (
-                  q.confirmedViolations.all(labId, counted.id)
-                ).map((v) => ({
-                  constraintCode: v.constraint_code,
-                  text: v.rule_text,
-                  deduction: Number(v.deduction),
-                  evidence: [],
-                }));
               latestSummary.mark = computePublishedGrade({
                 manualMark: counted.manual_mark,
                 testVerdict: counted.test_verdict,
-                confirmedViolations: violations,
+                confirmedViolations: studentViolationsMap.get(labId) ?? [],
               }).mark;
             }
           }

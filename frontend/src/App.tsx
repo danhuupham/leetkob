@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { apiFetch, DEMO_TOKENS } from './api';
 import { CreateLabView } from './components/CreateLabView';
 import { Header } from './components/Header';
@@ -39,31 +39,12 @@ export function App() {
 
   const [statusMessage, setStatusMessage] = useState('');
   const [statusTone, setStatusTone] = useState<'info' | 'success' | 'error'>('info');
+  const requestSeqRef = useRef(0);
 
   const setStatus = useCallback((message: string, tone: 'info' | 'success' | 'error' = 'info') => {
     setStatusMessage(message);
     setStatusTone(tone);
   }, []);
-
-  const loadLabById = useCallback(
-    async (tok: string, role: MeResponse['role'], labId: number) => {
-      try {
-        const detail = await apiFetch<LabDetail>(tok, 'GET', `/api/labs/${labId}`);
-        setLabDetail(detail);
-        setActiveLabId(detail.id);
-        setActiveView('lab');
-        if (role !== 'student') {
-          const qData = await apiFetch<QueueResponse>(tok, 'GET', `/api/labs/${labId}/queue`);
-          setQueue(qData);
-        } else {
-          setQueue(null);
-        }
-      } catch (err) {
-        setStatus(err instanceof Error ? err.message : 'Failed to load lab', 'error');
-      }
-    },
-    [setStatus],
-  );
 
   const refreshLabsList = useCallback(async (tok: string): Promise<LabSummary[]> => {
     setLoadingLabs(true);
@@ -76,8 +57,39 @@ export function App() {
     }
   }, []);
 
+  const loadLabById = useCallback(
+    async (tok: string, role: MeResponse['role'], labId: number, inheritedSeq?: number) => {
+      const seq = inheritedSeq ?? ++requestSeqRef.current;
+      try {
+        if (role !== 'student') {
+          const [detail, qData] = await Promise.all([
+            apiFetch<LabDetail>(tok, 'GET', `/api/labs/${labId}`),
+            apiFetch<QueueResponse>(tok, 'GET', `/api/labs/${labId}/queue`),
+          ]);
+          if (requestSeqRef.current !== seq) return;
+          setLabDetail(detail);
+          setQueue(qData);
+          setActiveLabId(detail.id);
+          setActiveView('lab');
+        } else {
+          const detail = await apiFetch<LabDetail>(tok, 'GET', `/api/labs/${labId}`);
+          if (requestSeqRef.current !== seq) return;
+          setLabDetail(detail);
+          setQueue(null);
+          setActiveLabId(detail.id);
+          setActiveView('lab');
+        }
+      } catch (err) {
+        if (requestSeqRef.current !== seq) return;
+        setStatus(err instanceof Error ? err.message : 'Failed to load lab', 'error');
+      }
+    },
+    [setStatus],
+  );
+
   const connectWithToken = useCallback(
     async (rawToken: string, whoName: string) => {
+      const seq = ++requestSeqRef.current;
       const trimmed = rawToken.trim();
       if (!trimmed) {
         setStatus('Enter a bearer token to connect.', 'error');
@@ -90,17 +102,20 @@ export function App() {
 
       try {
         const user = await apiFetch<MeResponse>(trimmed, 'GET', '/api/me');
+        if (requestSeqRef.current !== seq) return;
         setActiveToken(trimmed);
         setMe(user);
         setActiveView('lab');
         setStatus(`Signed in as ${user.name} (${user.role})`, 'info');
 
         const availableLabs = await refreshLabsList(trimmed);
+        if (requestSeqRef.current !== seq) return;
         const defaultLabId = chooseDefaultLab(availableLabs, whoName || user.name);
         if (defaultLabId !== null) {
-          await loadLabById(trimmed, user.role, defaultLabId);
+          await loadLabById(trimmed, user.role, defaultLabId, seq);
         }
       } catch (err) {
+        if (requestSeqRef.current !== seq) return;
         setMe(null);
         setActiveToken('');
         setLabs([]);
@@ -110,15 +125,8 @@ export function App() {
     [loadLabById, refreshLabsList, setStatus],
   );
 
-  function handleSelectWho(who: string) {
-    setSelectedWho(who);
-    const demoTok = DEMO_TOKENS[who];
-    if (!demoTok) return;
-    setTokenInput(demoTok);
-    void connectWithToken(demoTok, who);
-  }
-
   function handleSignOut() {
+    requestSeqRef.current += 1;
     setSelectedWho('');
     setTokenInput('');
     setActiveToken('');
@@ -129,6 +137,18 @@ export function App() {
     setQueue(null);
     setActiveView('lab');
     setStatus('', 'info');
+  }
+
+  function handleSelectWho(who: string) {
+    if (!who) {
+      handleSignOut();
+      return;
+    }
+    setSelectedWho(who);
+    const demoTok = DEMO_TOKENS[who];
+    if (!demoTok) return;
+    setTokenInput(demoTok);
+    void connectWithToken(demoTok, who);
   }
 
   async function handleRefreshQueue() {

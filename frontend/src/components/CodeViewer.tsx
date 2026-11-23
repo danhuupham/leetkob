@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiFetch } from '../api';
 import type { EvidenceLine, SubmissionRecord } from '../types';
 
@@ -19,6 +19,13 @@ export function CodeViewer({
   const [loading, setLoading] = useState(false);
   const [code, setCode] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOpen(false);
+    setCode(null);
+    setErrorMsg(null);
+    setLoading(false);
+  }, [submissionId, token]);
 
   const highlightedSet = new Set(highlightLines.map((e) => e.line));
 

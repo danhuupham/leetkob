@@ -101,7 +101,7 @@ Every check runs with one documented command locally and in GitHub Actions (`.gi
 | **Format check** | `npm run format:check` | `prettier --check .` (Prettier 3) |
 | **Type check** | `npm run typecheck` | `tsc --noEmit` (TypeScript 7 with `checkJs: true`, `strict: true`) |
 | **Unit tests** | `npm test` | `node --test --test-reporter=spec "test/unit/**/*.test.js"` (26 unit tests) |
-| **Contract tests** | `npm run contract` | `node --test --test-reporter=spec "test/contract/**/*.test.js"` (52 contract tests) |
+| **Contract tests** | `npm run contract` | `node --test --test-reporter=spec "test/contract/**/*.test.js"` (56 contract tests) |
 | **Sandbox attack tests** | `npm run test:sandbox` | `node --test --test-reporter=spec "test/sandbox/**/*.test.js"` (14 Docker `M1`–`M9` tests) |
 | **Secret scan (tree + history)** | `npm run scan` | `node scripts/scan-secrets.js` (scans working tree & `git log -p --all`) |
 | **Eval dataset SHA-256 check** | `npm run verify:eval` | `node scripts/verify-eval.js` (verifies byte-for-byte SHA-256 of `leetkob-eval/`) |

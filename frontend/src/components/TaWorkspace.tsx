@@ -30,6 +30,7 @@ export function TaWorkspace({
   onError,
 }: TaWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<'queue' | 'submissions' | 'problem'>('queue');
+  const [selectedLineBySub, setSelectedLineBySub] = useState<Record<number, EvidenceLine>>({});
   const published = Boolean(queue?.publishedAt || lab.publishedAt);
   const items = queue?.items ?? [];
   const countedSubmissions = queue?.submissions ?? [];
@@ -189,68 +190,82 @@ export function TaWorkspace({
             {countedSubmissions.length === 0 ? (
               <p className="muted">No counted C++ submissions before deadline yet.</p>
             ) : (
-              countedSubmissions.map((sub) => (
-                <div key={sub.id} className="verdict-card">
-                  <div className="verdict-head">
-                    <div className="toolbar-row">
-                      <strong>
-                        Submission #{sub.id} · {sub.student}
-                      </strong>
-                      <span
-                        className={
-                          sub.testVerdict === 'AC'
-                            ? 'pill pill-success'
-                            : sub.testVerdict === 'PENDING'
-                              ? 'pill pill-accent'
-                              : 'pill pill-danger'
-                        }
-                      >
-                        {sub.testVerdict}
-                      </span>
-                      <span className="pill">
-                        judge={sub.judgeStatus}
-                        {sub.jobStatus === 'failed' ? ' (FAILED)' : ''}
-                      </span>
+              countedSubmissions.map((sub) => {
+                const needsLinePick =
+                  !published && sub.verdicts.some((v) => !v.evidence || v.evidence.length === 0);
+                return (
+                  <div key={sub.id} className="verdict-card">
+                    <div className="verdict-head">
+                      <div className="toolbar-row">
+                        <strong>
+                          Submission #{sub.id} · {sub.student}
+                        </strong>
+                        <span
+                          className={
+                            sub.testVerdict === 'AC'
+                              ? 'pill pill-success'
+                              : sub.testVerdict === 'PENDING'
+                                ? 'pill pill-accent'
+                                : 'pill pill-danger'
+                          }
+                        >
+                          {sub.testVerdict}
+                        </span>
+                        <span className="pill">
+                          judge={sub.judgeStatus}
+                          {sub.jobStatus === 'failed' ? ' (FAILED)' : ''}
+                        </span>
+                      </div>
+                      <span className="muted">{sub.submittedAt} UTC</span>
                     </div>
-                    <span className="muted">{sub.submittedAt} UTC</span>
+
+                    <CodeViewer
+                      token={token}
+                      submissionId={sub.id}
+                      highlightLines={sub.verdicts.flatMap((v) => v.evidence)}
+                      onSelectLine={
+                        needsLinePick
+                          ? (line, text) =>
+                              setSelectedLineBySub((prev) => ({
+                                ...prev,
+                                [sub.id]: { line, text },
+                              }))
+                          : undefined
+                      }
+                    />
+
+                    {sub.verdicts.length > 0 && (
+                      <div className="builder-list">
+                        {sub.verdicts.map((v) => (
+                          <VerdictCard
+                            key={v.verdictId}
+                            token={token}
+                            published={published}
+                            showStudentCodeViewer={false}
+                            externalLineSelection={selectedLineBySub[sub.id] ?? null}
+                            item={{
+                              verdictId: v.verdictId,
+                              submissionId: sub.id,
+                              student: sub.student,
+                              constraintCode: v.constraintCode,
+                              ruleText: v.ruleText,
+                              deduction: v.deduction,
+                              verdict: v.verdict,
+                              source: v.source,
+                              unsureReason: v.unsureReason,
+                              evidence: v.evidence,
+                              rationale: v.rationale,
+                              taDecision: v.taDecision,
+                            }}
+                            onReviewDecision={onReviewVerdict}
+                            onError={onError}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
-
-                  <CodeViewer
-                    token={token}
-                    submissionId={sub.id}
-                    highlightLines={sub.verdicts.flatMap((v) => v.evidence)}
-                  />
-
-                  {sub.verdicts.length > 0 && (
-                    <div className="builder-list">
-                      {sub.verdicts.map((v) => (
-                        <VerdictCard
-                          key={v.verdictId}
-                          token={token}
-                          published={published}
-                          showStudentCodeViewer={false}
-                          item={{
-                            verdictId: v.verdictId,
-                            submissionId: sub.id,
-                            student: sub.student,
-                            constraintCode: v.constraintCode,
-                            ruleText: v.ruleText,
-                            deduction: v.deduction,
-                            verdict: v.verdict,
-                            source: v.source,
-                            unsureReason: v.unsureReason,
-                            evidence: v.evidence,
-                            rationale: v.rationale,
-                            taDecision: v.taDecision,
-                          }}
-                          onReviewDecision={onReviewVerdict}
-                          onError={onError}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}

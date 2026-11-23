@@ -119,9 +119,10 @@ export function matchRoute(method, pathname, routes) {
  * @param {string} publicDir
  * @param {string} pathname
  * @param {import('node:http').ServerResponse} res
+ * @param {boolean} [headOnly]
  * @returns {boolean}
  */
-export function serveStatic(publicDir, pathname, res) {
+export function serveStatic(publicDir, pathname, res, headOnly = false) {
   const root = resolve(publicDir);
   const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
   const candidate = resolve(root, rel);
@@ -129,7 +130,11 @@ export function serveStatic(publicDir, pathname, res) {
   if (!existsSync(candidate) || !statSync(candidate).isFile()) return false;
 
   const contentType = MIME_TYPES[extname(candidate)] || 'application/octet-stream';
-  res.writeHead(200, { 'content-type': contentType });
-  res.end(readFileSync(candidate));
+  const body = readFileSync(candidate);
+  res.writeHead(200, {
+    'content-type': contentType,
+    'content-length': String(body.length),
+  });
+  res.end(headOnly ? undefined : body);
   return true;
 }
