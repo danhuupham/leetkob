@@ -1,10 +1,11 @@
 import { config } from './config.js';
 
 /**
- * Atomically claims the oldest available job.
+ * Atomically claims the oldest available job within the attempt limit.
  * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} [maxAttempts]
  */
-export function claimNextJob(db) {
+export function claimNextJob(db, maxAttempts = 3) {
   return db
     .prepare(
       `
@@ -16,18 +17,21 @@ export function claimNextJob(db) {
     WHERE id = (
       SELECT id
       FROM judge_jobs
-      WHERE status = 'queued'
-         OR (
-           status = 'running'
-           AND locked_at <= datetime('now', '-60 seconds')
-         )
+      WHERE (
+        status = 'queued'
+        OR (
+          status = 'running'
+          AND locked_at <= datetime('now', '-60 seconds')
+        )
+      )
+      AND attempts < ?
       ORDER BY id ASC
       LIMIT 1
     )
     RETURNING id, submission_id, attempts, trace_id
   `,
     )
-    .get();
+    .get(maxAttempts);
 }
 
 /**
@@ -69,7 +73,8 @@ export function claimNextJob(db) {
  *     code:string,
  *     constraints:Array<{id:string,text:string}>
  *   }) => Promise<ConstraintResult[]>,
- *   maxAttempts?: number
+ *   maxAttempts?: number,
+ *   heartbeatIntervalMs?: number
  * }} WorkerOptions
  */
 
@@ -77,15 +82,36 @@ export function claimNextJob(db) {
  * Processes one job, or returns false if none exists.
  * @param {WorkerOptions} options
  */
-export async function processNextJob({ db, sandboxRunner, constraintChecker, maxAttempts = 3 }) {
+export async function processNextJob({
+  db,
+  sandboxRunner,
+  constraintChecker,
+  maxAttempts = 3,
+  heartbeatIntervalMs = 20_000,
+}) {
   const job = /** @type {{
     id:number,
     submission_id:number,
     attempts:number,
     trace_id:string|null
-  }|undefined} */ (claimNextJob(db));
+  }|undefined} */ (claimNextJob(db, maxAttempts));
 
   if (!job) return false;
+
+  const renewStmt = db.prepare(
+    `UPDATE judge_jobs SET locked_at = datetime('now') WHERE id = ? AND status = 'running' AND attempts = ?`,
+  );
+  const heartbeat =
+    heartbeatIntervalMs > 0
+      ? setInterval(() => {
+          try {
+            renewStmt.run(job.id, job.attempts);
+          } catch {
+            // Ignore if DB handle closed during shutdown.
+          }
+        }, heartbeatIntervalMs)
+      : null;
+  heartbeat?.unref();
 
   try {
     const submission = /** @type {{
@@ -185,6 +211,24 @@ export async function processNextJob({ db, sandboxRunner, constraintChecker, max
     db.exec('BEGIN IMMEDIATE');
 
     try {
+      // Fence on (id, status='running', attempts) so a stale worker cannot overwrite a newer claim.
+      const completeRes = db
+        .prepare(
+          `
+        UPDATE judge_jobs
+        SET status = 'done',
+            locked_at = NULL,
+            finished_at = datetime('now')
+        WHERE id = ? AND status = 'running' AND attempts = ?
+      `,
+        )
+        .run(job.id, job.attempts);
+
+      if (Number(completeRes.changes) === 0) {
+        db.exec('COMMIT');
+        return true;
+      }
+
       if (result.testVerdict === 'AC') {
         const upsert = db.prepare(`
           INSERT INTO constraint_verdicts (
@@ -240,16 +284,6 @@ export async function processNextJob({ db, sandboxRunner, constraintChecker, max
       `,
       ).run(result.testVerdict, JSON.stringify(result.testResults), submission.id);
 
-      db.prepare(
-        `
-        UPDATE judge_jobs
-        SET status = 'done',
-            locked_at = NULL,
-            finished_at = datetime('now')
-        WHERE id = ?
-      `,
-      ).run(job.id);
-
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -260,28 +294,43 @@ export async function processNextJob({ db, sandboxRunner, constraintChecker, max
   } catch (error) {
     try {
       const shouldRetry = job.attempts < maxAttempts;
-      db.prepare(
-        `
-        UPDATE judge_jobs
-        SET status = ?,
-            locked_at = NULL,
-            finished_at = CASE WHEN ? THEN datetime('now') ELSE finished_at END
-        WHERE id = ?
-      `,
-      ).run(shouldRetry ? 'queued' : 'failed', shouldRetry ? 0 : 1, job.id);
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const failRes = db
+          .prepare(
+            `
+          UPDATE judge_jobs
+          SET status = ?,
+              locked_at = NULL,
+              finished_at = CASE WHEN ? THEN datetime('now') ELSE finished_at END
+          WHERE id = ? AND status = 'running' AND attempts = ?
+        `,
+          )
+          .run(shouldRetry ? 'queued' : 'failed', shouldRetry ? 0 : 1, job.id, job.attempts);
 
-      db.prepare(
-        `
-        UPDATE submissions
-        SET judge_status = 'queued'
-        WHERE id = ?
-      `,
-      ).run(job.submission_id);
+        if (Number(failRes.changes) === 1) {
+          db.prepare(
+            `
+            UPDATE submissions
+            SET judge_status = 'queued'
+            WHERE id = ?
+          `,
+          ).run(job.submission_id);
+        }
+
+        db.exec('COMMIT');
+      } catch {
+        db.exec('ROLLBACK');
+      }
     } catch {
       // Preserve original error if database handle was closed.
     }
 
     throw error;
+  } finally {
+    if (heartbeat !== null) {
+      clearInterval(heartbeat);
+    }
   }
 }
 

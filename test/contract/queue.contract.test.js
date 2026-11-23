@@ -400,3 +400,123 @@ test('AC5: startWorkerLoop catches job errors and continues processing remaining
     ctx.db.close();
   }
 });
+
+test('AC6: claimNextJob enforces maxAttempts on stale locks and fencing prevents stale overwrite', async () => {
+  const ctx = setup('AC');
+
+  try {
+    const { claimNextJob, processNextJob } = await import('../../src/worker.js');
+
+    // A stale running job that already reached maxAttempts must not be reclaimed endlessly.
+    ctx.db
+      .prepare(
+        `UPDATE judge_jobs
+            SET status = 'running',
+                locked_at = datetime('now', '-120 seconds'),
+                attempts = 2
+          WHERE id = 1`,
+      )
+      .run();
+    assert.equal(claimNextJob(ctx.db, 2), undefined);
+
+    // Reset job 1 cleanly, then simulate stale-lock takeover while worker 1 is mid-run.
+    ctx.db
+      .prepare(
+        `UPDATE judge_jobs
+            SET status = 'queued',
+                locked_at = NULL,
+                attempts = 0
+          WHERE id = 1`,
+      )
+      .run();
+
+    for (const outcome of /** @type {const} */ (['resolve', 'reject'])) {
+      ctx.db
+        .prepare(
+          `UPDATE judge_jobs
+              SET status = 'queued',
+                  locked_at = NULL,
+                  finished_at = NULL,
+                  attempts = 0
+            WHERE id = 1`,
+        )
+        .run();
+      ctx.db
+        .prepare(
+          `UPDATE submissions
+              SET judge_status = 'queued',
+                  test_verdict = 'PENDING'
+            WHERE id = 1`,
+        )
+        .run();
+      ctx.db.prepare('DELETE FROM constraint_verdicts WHERE submission_id = 1').run();
+
+      const workerPromise = processNextJob({
+        db: ctx.db,
+        maxAttempts: 3,
+        heartbeatIntervalMs: 0,
+        sandboxRunner: async () => {
+          // Worker 2 took over and finished the job cleanly while worker 1 was stalled.
+          ctx.db
+            .prepare(
+              `UPDATE judge_jobs
+                  SET status = 'done',
+                      locked_at = NULL,
+                      attempts = 2,
+                      finished_at = datetime('now')
+                WHERE id = 1`,
+            )
+            .run();
+          ctx.db
+            .prepare(
+              `UPDATE submissions
+                  SET judge_status = 'done',
+                      test_verdict = 'AC'
+                WHERE id = 1`,
+            )
+            .run();
+          ctx.db
+            .prepare(
+              `INSERT INTO constraint_verdicts
+                 (submission_id, constraint_code, verdict, source, evidence_json)
+               VALUES (1, 'C1', 'pass', 'hard_rule', '[]')`,
+            )
+            .run();
+
+          if (outcome === 'reject') {
+            throw new Error('Stale worker timed out');
+          }
+          return {
+            testVerdict: 'WA',
+            compileStderr: '',
+            testResults: [{ ordinal: 1, verdict: 'WA' }],
+            durationMs: 1,
+          };
+        },
+        constraintChecker: ctx.constraintChecker,
+      });
+
+      if (outcome === 'reject') {
+        await assert.rejects(() => workerPromise, /Stale worker timed out/);
+      } else {
+        await workerPromise;
+      }
+
+      const job = required(
+        ctx.db.prepare('SELECT status, attempts FROM judge_jobs WHERE id = 1').get(),
+      );
+      const sub = submission(ctx.db);
+      const verdicts = ctx.db
+        .prepare('SELECT constraint_code, verdict FROM constraint_verdicts WHERE submission_id = 1')
+        .all();
+      assert.equal(job.status, 'done');
+      assert.equal(job.attempts, 2);
+      assert.equal(sub.judge_status, 'done');
+      assert.equal(sub.test_verdict, 'AC');
+      assert.equal(verdicts.length, 1);
+      assert.equal(verdicts[0].verdict, 'pass');
+    }
+  } finally {
+    ctx.db.close();
+  }
+});
