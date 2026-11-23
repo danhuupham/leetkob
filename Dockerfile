@@ -1,10 +1,19 @@
+FROM node:22.13.0-bookworm-slim AS web-builder
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY vite.config.ts ./
+COPY frontend ./frontend
+RUN npm run build
+
 FROM node:22.13.0-bookworm-slim
 
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY src ./src
-COPY public ./public
+COPY --from=web-builder /app/public ./public
 COPY migrations ./migrations
 COPY scripts ./scripts
 

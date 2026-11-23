@@ -9,26 +9,34 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "dev:web": "vite",
+    "build": "vite build",
     "worker": "node scripts/worker.js",
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p frontend/tsconfig.json --noEmit",
     "test": "node --test --test-reporter=spec \"test/unit/**/*.test.js\"",
     "contract": "node --test --test-reporter=spec \"test/contract/**/*.test.js\"",
     "scan": "node scripts/scan-secrets.js",
     "verify:eval": "node scripts/verify-eval.js",
     "test:sandbox": "node --test --test-reporter=spec \"test/sandbox/**/*.test.js\"",
-    "e2e": "playwright test",
+    "e2e": "npm run build && playwright test",
     "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run contract && npm run scan && npm run verify:eval"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
     "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
     "eslint": "^10.15.0",
     "prettier": "^3.10.1",
-    "typescript": "^7.0.2"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
   }
 }

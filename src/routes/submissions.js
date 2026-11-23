@@ -1,6 +1,6 @@
 import { send, problem, readJson } from '../http.js';
 import { parsePositiveInt } from '../auth.js';
-import { markFor } from '../grades.js';
+import { computePublishedGrade } from '../grades.js';
 
 const MAX_CODE_BYTES = 65_536;
 
@@ -81,9 +81,141 @@ export function createSubmissionRoutes(db, auth) {
       INSERT INTO judge_jobs (submission_id, status)
       VALUES (?, 'queued')
     `),
+    labSubmissionsForStudent: db.prepare(`
+      SELECT s.id, s.lab_id, s.student_id, u.name AS student_name, s.code,
+             s.judge_status, j.status AS job_status, s.test_verdict,
+             s.test_results_json, s.manual_mark, s.manual_reason, s.submitted_at
+      FROM submissions s
+      JOIN users u ON u.id = s.student_id
+      LEFT JOIN judge_jobs j ON j.submission_id = s.id
+      WHERE s.lab_id = ? AND s.student_id = ?
+      ORDER BY s.id DESC
+    `),
+    labSubmissionsForStaff: db.prepare(`
+      SELECT s.id, s.lab_id, s.student_id, u.name AS student_name, s.code,
+             s.judge_status, j.status AS job_status, s.test_verdict,
+             s.test_results_json, s.manual_mark, s.manual_reason, s.submitted_at
+      FROM submissions s
+      JOIN users u ON u.id = s.student_id
+      LEFT JOIN judge_jobs j ON j.submission_id = s.id
+      WHERE s.lab_id = ?
+      ORDER BY s.id DESC
+    `),
   };
 
+  /**
+   * Loads published grade & confirmed deductions using the single shared grade calculation helper.
+   * @param {number} labId
+   * @param {number} submissionId
+   * @param {{ manual_mark: number | null, manual_reason: string | null, test_verdict: string }} details
+   */
+  function loadPublishedFields(labId, submissionId, details) {
+    const confirmed =
+      /** @type {Array<{ constraint_code: string, rule_text: string, deduction: number, evidence_json: string }>} */ (
+        q.confirmedViolations.all(labId, submissionId)
+      ).map((v) => ({
+        constraintCode: v.constraint_code,
+        text: v.rule_text,
+        deduction: Number(v.deduction),
+        evidence: safeJsonParse(v.evidence_json, /** @type {unknown[]} */ ([])),
+      }));
+
+    const { mark, deductions } = computePublishedGrade({
+      manualMark: details.manual_mark,
+      testVerdict: details.test_verdict,
+      confirmedViolations: confirmed,
+    });
+
+    return {
+      mark,
+      deductions,
+      ...(details.manual_reason ? { manualReason: details.manual_reason } : {}),
+    };
+  }
+
   return [
+    // GET /api/labs/:labId/submissions — Student's own attempts (or all lab attempts for staff), respecting FAQ-08.
+    [
+      'GET',
+      '/api/labs/:labId/submissions',
+      (req, res, params) => {
+        const me = auth.requireAuth(req, res);
+        if (!me) return;
+
+        const labId = parsePositiveInt(params.labId);
+        const lab =
+          labId !== null
+            ? /** @type {{ id: number, class_id: number, deadline_at: string, published_at: string | null } | undefined} */ (
+                q.findLab.get(labId)
+              )
+            : undefined;
+        if (!lab) {
+          return problem(res, 404, 'not-found', 'No such lab');
+        }
+
+        const classId = Number(lab.class_id);
+        const isStudent = me.role === 'student' && auth.isEnrolled(me, classId);
+        const isStaff = me.role !== 'student' && auth.isStaff(me, classId);
+        if (!isStudent && !isStaff) {
+          return problem(res, 404, 'not-found', 'No such lab');
+        }
+
+        const rows =
+          /** @type {Array<{ id: number, lab_id: number, student_id: number, student_name: string, code: string, judge_status: string, job_status: string | null, test_verdict: string, test_results_json: string, manual_mark: number | null, manual_reason: string | null, submitted_at: string }>} */ (
+            isStudent
+              ? q.labSubmissionsForStudent.all(lab.id, me.id)
+              : q.labSubmissionsForStaff.all(lab.id)
+          );
+
+        /** @type {Map<number, number | null>} */
+        const countedByStudent = new Map();
+        const published = lab.published_at !== null;
+
+        const submissions = rows.map((row) => {
+          const sid = Number(row.student_id);
+          if (!countedByStudent.has(sid)) {
+            const cRow = /** @type {{ counted_id: number | null } | undefined} */ (
+              q.countedId.get(lab.id, sid, lab.deadline_at)
+            );
+            countedByStudent.set(sid, cRow?.counted_id ?? null);
+          }
+
+          /** @type {Record<string, unknown>} */
+          const item = {
+            id: Number(row.id),
+            labId: Number(row.lab_id),
+            judgeStatus: row.judge_status,
+            status: row.judge_status,
+            jobStatus: row.job_status ?? null,
+            counted: Number(countedByStudent.get(sid)) === Number(row.id),
+            testVerdict: row.test_verdict,
+            testResults: safeJsonParse(row.test_results_json, /** @type {unknown[]} */ ([])),
+            submittedAt: row.submitted_at,
+            code: row.code,
+          };
+
+          if (isStaff) {
+            item.student = row.student_name;
+            item.studentId = sid;
+          }
+
+          if (published) {
+            const pub = loadPublishedFields(lab.id, Number(row.id), row);
+            item.mark = pub.mark;
+            item.deductions = pub.deductions;
+            if (pub.manualReason) item.manualReason = pub.manualReason;
+          }
+
+          return item;
+        });
+
+        return send(res, 200, {
+          labId: Number(lab.id),
+          publishedAt: lab.published_at,
+          submissions,
+        });
+      },
+    ],
     // GET /api/submissions/:id — View submission status with strict FAQ-04/FAQ-08/FAQ-09 visibility.
     [
       'GET',
@@ -167,40 +299,15 @@ export function createSubmissionRoutes(db, auth) {
           return send(res, 200, base);
         }
 
-        const confirmed =
-          /** @type {Array<{ constraint_code: string, rule_text: string, deduction: number, evidence_json: string }>} */ (
-            q.confirmedViolations.all(submission.lab_id, submissionId)
-          );
-
-        let mark;
-        /** @type {Array<{ constraintCode: string, text: string, deduction: number, evidence: unknown[] }>} */
-        let deductions = [];
-
-        if (details.manual_mark !== null) {
-          mark = Number(details.manual_mark);
-        } else if (details.test_verdict !== 'AC') {
-          // FAQ-04: non-AC submissions receive 0 marks unless TA explicitly entered manual_mark.
-          mark = 0;
-        } else {
-          deductions = confirmed.map((v) => ({
-            constraintCode: v.constraint_code,
-            text: v.rule_text,
-            deduction: Number(v.deduction),
-            evidence: safeJsonParse(v.evidence_json, /** @type {unknown[]} */ ([])),
-          }));
-          mark = markFor(
-            confirmed.map((v) => ({
-              verdict: 'violation',
-              decision: 'confirm',
-              deduction: Number(v.deduction),
-              constraintId: String(v.constraint_code),
-            })),
-          );
-        }
+        const { mark, deductions, manualReason } = loadPublishedFields(
+          submission.lab_id,
+          submissionId,
+          details,
+        );
 
         if (isClassStaff) {
           base.mark = mark;
-          if (details.manual_reason) base.manualReason = details.manual_reason;
+          if (manualReason) base.manualReason = manualReason;
           return send(res, 200, base);
         }
 
@@ -208,7 +315,7 @@ export function createSubmissionRoutes(db, auth) {
           ...base,
           mark,
           deductions,
-          ...(details.manual_reason ? { manualReason: details.manual_reason } : {}),
+          ...(manualReason ? { manualReason } : {}),
         });
       },
     ],
