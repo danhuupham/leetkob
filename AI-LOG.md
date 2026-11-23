@@ -136,6 +136,25 @@ By hand: Verified `git diff 4a5fcf0..ef79bf9 -- test/` is empty (0 bytes modifie
 
 ---
 
+## Entry 9 · 2026-11-20 — Task `T3.2`: Hardened Docker C++17 Sandbox & `M1`–`M9` Attack Suite (`15b23b6`, `57249b3`, `9c32b46`)
+Tool: Antigravity
+Asked for: Implement `PA#3` Task `T3.2` test-first on branch `feat/pa3-sandbox`: 10 C++ attack fixtures (`test/fixtures/attacks/m1_network.cpp`–`m9_include_env.cpp`) and `test/sandbox/attacks.test.js` first, followed by `Dockerfile.sandbox`, `src/sandbox/runner.js` (`runInSandbox`), `"test:sandbox"`, and the `sandbox` CI job.
+Kept:
+- `test/fixtures/attacks/` and `test/sandbox/attacks.test.js` committed first (`15b23b6`) covering compliant token-by-token C++17 judging plus all 9 sandbox minimums (`M1`–`M9`, including `m4_memory_1gib_readback.cpp` volatile page readback and `m9_include_env.cpp` inside-container compile isolation).
+- `Dockerfile.sandbox` (`gcc:13.3-bookworm`, `USER 65534:65534`) and `src/sandbox/runner.js` (`57249b3`) enforcing `--network none`, `--user 65534:65534`, `--read-only`, `--tmpfs /tmp:rw,exec,nosuid,nodev,size=32m`, `--memory`/`--memory-swap`, `--pids-limit`, `--cpus 1`, `--cap-drop ALL`, and `--security-opt no-new-privileges`, plus host-side `docker rm -f` wall-clock reaping (`M3`).
+Changed:
+- Initially passed `env: getSandboxEnv()` directly to `spawn('docker', ...)` in `src/sandbox/runner.js`, which threw `spawn docker ENOENT` (`errno: -4058`) on Windows Docker Desktop because `getSandboxEnv()` defines POSIX `PATH=/usr/local/sbin:...`. Kept `getSandboxEnv()` verbatim on Linux/CI and constructed a minimal `dockerCliEnv` on `win32` copying only `PATH`, `SystemRoot`, and `USERPROFILE` so `docker.exe` resolves while still stripping `MODEL_API_KEY`, `SESSION_SECRET`, and `DATABASE_URL` (`M9`).
+- Avoided relying on POSIX `sh` pipeline `$?` for `(...) | head -c ...`, because `dash` returns `head`'s exit code (`0`) and would mask `SIGKILL`/`SIGXCPU`/`SIGPIPE` failures across `M1`–`M6`; captured `/tmp/main`'s exit status explicitly to `/tmp/rc.txt` inside the producer subshell and checked `wc -c < /tmp/out.txt` against `outputLimitBytes`.
+- Closed `STDOUT_FILENO`/`STDERR_FILENO` in forked children inside `m5_pids_fork_bomb.cpp` so `--pids-limit 16` triggers cleanly without keeping `stdout` pipes open past parent exit.
+- In `9c32b46` (PR #15 review fixes), split `dash` `ulimit` into `ulimit -S -t` then `ulimit -H -t`, enforced Node-side stdout/stderr byte caps + `/tmp/compile.err` cap + per-run marker nonces, switched to a per-phase host watchdog (`COMPILED` + per-test resets), treated Docker infra codes (`125`/`126`/`127`) as thrown `Error`s, and added `rm -rf /tmp/rc.txt` before writing `$rc_code` so student code cannot pre-create a read-only `/tmp/rc.txt`.
+Rejected:
+- **Rejected host bind mounts (`-v`) for transferring `main.cpp` and test inputs:** Host mounts violate `M8` (`no host mounts`) and complicate read-only isolation; streamed Base64-encoded payloads over `stdin` into `--tmpfs /tmp` instead.
+- **Rejected process-only timeout without `docker rm -f` container reaping (`M3`):** Waiting only on the `docker` CLI PID leaves forked children holding `stdout` pipes alive (`m3_wall_fork_pipe.cpp`); host timer invokes `docker rm -f leetkob-judge-<uuid>` to terminate the container in `~4.8s` (`< 6.5s` threshold) with zero leftover containers.
+- **Rejected `i & 0xff` page fill without readback (`M4`):** `4096`-aligned `i & 0xff` evaluates to `0` and write-only allocations risk dead-code elimination under `g++ -O2`; wrote `(i / 4096) & 0xff` via `volatile unsigned char*` and summed all pages into a printed `checksum`.
+By hand: Built `leetkob-sandbox:test`, verified `npm run test:sandbox` passed `14/14` tests (`15.97s` in CI; `9c32b46` tightened `M2` `< 2500ms` and added 3 regression tests without loosening any original assertion), and confirmed `npm run check` passes.
+
+---
+
 ## Entry 10 · 2026-11-22 — Task `T3.5`: Custom Eval Cases, Dataset Checker CLI, `Dockerfile.checker` & First Real Eval (`810578e`, `12c0728`, `e588bb9`)
 Tool: Antigravity
 Asked for: Implement `PA#3` Task `T3.5` on branch `feat/pa3-checker-cli`: create `eval/custom-cases/` (`>= 6` Accepted solutions covering `trap`, `disguised`, `injection`, `style`) first (`810578e`), then implement `src/cli/check-dataset.js` & `Dockerfile.checker` (`12c0728`) with `MODEL_OFF=1` and `--network none` verification, run our first live dev-set evaluation saved to `eval/runs/pa3-dev/`, and address PR #16 review feedback.

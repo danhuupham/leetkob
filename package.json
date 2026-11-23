@@ -19,6 +19,7 @@
     "contract": "node --test --test-reporter=spec \"test/contract/**/*.test.js\"",
     "scan": "node scripts/scan-secrets.js",
     "verify:eval": "node scripts/verify-eval.js",
+    "test:sandbox": "node --test --test-reporter=spec \"test/sandbox/**/*.test.js\"",
     "e2e": "playwright test",
     "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run contract && npm run scan && npm run verify:eval"
   },
