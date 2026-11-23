@@ -80,10 +80,10 @@ export function seedDemoData(db) {
       (1, 1, 'Merge sort', '2026-11-01 00:00:00'),
       (2, 2, 'Merge sort', '2026-11-01 00:00:00'),
       (3, 2, 'Binary search', '2099-12-31 23:59:59');
-    INSERT OR IGNORE INTO submissions VALUES
-      (1, 1, 4, 'violation', NULL),
-      (2, 1, 5, 'pass', NULL),
-      (3, 2, 6, 'violation', 'confirm');
+    INSERT OR IGNORE INTO submissions (id, lab_id, student_id, verdict, decision, submitted_at) VALUES
+      (1, 1, 4, 'violation', NULL, '2026-10-31 23:59:59'),
+      (2, 1, 5, 'pass', NULL, '2026-10-31 23:59:59'),
+      (3, 2, 6, 'violation', 'confirm', '2026-10-31 23:59:59');
   `);
 }
 

@@ -303,3 +303,100 @@ for (const testVerdict of /** @type {const} */ (['WA', 'CE'])) {
     }
   });
 }
+
+test('AC4: transient sandbox failure requeues job until maxAttempts, then marks failed without leaving submission running', async () => {
+  const ctx = setup('AC');
+
+  try {
+    const { processNextJob } = await import('../../src/worker.js');
+    const failingCtx = {
+      db: ctx.db,
+      sandboxRunner: async () => {
+        throw new Error('Docker daemon busy');
+      },
+      constraintChecker: ctx.constraintChecker,
+      maxAttempts: 2,
+    };
+
+    await assert.rejects(() => processNextJob(failingCtx), /Docker daemon busy/);
+    const afterAttempt1 = required(
+      ctx.db.prepare('SELECT status, attempts, locked_at FROM judge_jobs WHERE id = 1').get(),
+    );
+    assert.equal(afterAttempt1.status, 'queued');
+    assert.equal(afterAttempt1.attempts, 1);
+    assert.equal(afterAttempt1.locked_at, null);
+    assert.equal(submission(ctx.db).judge_status, 'queued');
+
+    await assert.rejects(() => processNextJob(failingCtx), /Docker daemon busy/);
+    const afterAttempt2 = required(
+      ctx.db.prepare('SELECT status, attempts, finished_at FROM judge_jobs WHERE id = 1').get(),
+    );
+    assert.equal(afterAttempt2.status, 'failed');
+    assert.equal(afterAttempt2.attempts, 2);
+    assert.ok(afterAttempt2.finished_at !== null);
+    assert.equal(submission(ctx.db).judge_status, 'queued');
+  } finally {
+    ctx.db.close();
+  }
+});
+
+test('AC5: startWorkerLoop catches job errors and continues processing remaining jobs', async () => {
+  const ctx = setup('AC');
+
+  try {
+    ctx.db
+      .prepare(
+        `INSERT INTO submissions
+           (id, lab_id, student_id, verdict, code, judge_status, test_verdict)
+         VALUES (2, 1, 1, 'pass', 'int main() { return 0; }', 'queued', 'PENDING')`,
+      )
+      .run();
+    ctx.db.prepare('INSERT INTO judge_jobs (id, submission_id) VALUES (2, 2)').run();
+
+    const { startWorkerLoop } = await import('../../src/worker.js');
+    const abort = new AbortController();
+    /** @type {unknown[]} */
+    const caughtErrors = [];
+
+    const loopPromise = startWorkerLoop({
+      db: ctx.db,
+      signal: abort.signal,
+      pollIntervalMs: 10,
+      maxAttempts: 1,
+      onError: (err) => caughtErrors.push(err),
+      sandboxRunner: async ({ jobId }) => {
+        if (jobId === 1) {
+          throw new Error('Simulated job 1 failure');
+        }
+        return {
+          testVerdict: 'AC',
+          compileStderr: '',
+          testResults: [{ ordinal: 1, verdict: 'AC' }],
+          durationMs: 1,
+        };
+      },
+      constraintChecker: ctx.constraintChecker,
+    });
+
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const job2 = required(ctx.db.prepare('SELECT status FROM judge_jobs WHERE id = 2').get());
+      if (job2.status === 'done') break;
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    abort.abort();
+    await loopPromise;
+
+    assert.equal(caughtErrors.length, 1);
+    const job1 = required(ctx.db.prepare('SELECT status FROM judge_jobs WHERE id = 1').get());
+    const job2 = required(ctx.db.prepare('SELECT status FROM judge_jobs WHERE id = 2').get());
+    const sub2 = required(
+      ctx.db.prepare('SELECT judge_status FROM submissions WHERE id = 2').get(),
+    );
+    assert.equal(job1.status, 'failed');
+    assert.equal(job2.status, 'done');
+    assert.equal(sub2.judge_status, 'done');
+  } finally {
+    ctx.db.close();
+  }
+});

@@ -68,7 +68,8 @@ export function claimNextJob(db) {
  *     labId:number,
  *     code:string,
  *     constraints:Array<{id:string,text:string}>
- *   }) => Promise<ConstraintResult[]>
+ *   }) => Promise<ConstraintResult[]>,
+ *   maxAttempts?: number
  * }} WorkerOptions
  */
 
@@ -76,7 +77,7 @@ export function claimNextJob(db) {
  * Processes one job, or returns false if none exists.
  * @param {WorkerOptions} options
  */
-export async function processNextJob({ db, sandboxRunner, constraintChecker }) {
+export async function processNextJob({ db, sandboxRunner, constraintChecker, maxAttempts = 3 }) {
   const job = /** @type {{
     id:number,
     submission_id:number,
@@ -257,13 +258,28 @@ export async function processNextJob({ db, sandboxRunner, constraintChecker }) {
 
     return true;
   } catch (error) {
-    db.prepare(
-      `
-      UPDATE judge_jobs
-      SET status = 'failed', locked_at = NULL
-      WHERE id = ?
-    `,
-    ).run(job.id);
+    try {
+      const shouldRetry = job.attempts < maxAttempts;
+      db.prepare(
+        `
+        UPDATE judge_jobs
+        SET status = ?,
+            locked_at = NULL,
+            finished_at = CASE WHEN ? THEN datetime('now') ELSE finished_at END
+        WHERE id = ?
+      `,
+      ).run(shouldRetry ? 'queued' : 'failed', shouldRetry ? 0 : 1, job.id);
+
+      db.prepare(
+        `
+        UPDATE submissions
+        SET judge_status = 'queued'
+        WHERE id = ?
+      `,
+      ).run(job.submission_id);
+    } catch {
+      // Preserve original error if database handle was closed.
+    }
 
     throw error;
   }
@@ -273,16 +289,24 @@ export async function processNextJob({ db, sandboxRunner, constraintChecker }) {
  * Polls until stopped with AbortController.
  * @param {WorkerOptions & {
  *   signal?:AbortSignal,
- *   pollIntervalMs?:number
+ *   pollIntervalMs?:number,
+ *   onError?:(err:unknown)=>void
  * }} options
  */
 export async function startWorkerLoop(options) {
-  const { signal, pollIntervalMs = 1000 } = options;
+  const {
+    signal,
+    pollIntervalMs = 1000,
+    onError = (err) => console.error('Worker job error:', err),
+  } = options;
 
   while (!signal?.aborted) {
-    const processed = await processNextJob(options);
-
-    if (processed) continue;
+    try {
+      const processed = await processNextJob(options);
+      if (processed) continue;
+    } catch (err) {
+      onError(err);
+    }
 
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, pollIntervalMs);
