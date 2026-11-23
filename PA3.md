@@ -6,8 +6,6 @@
 - `21120595` — Nguyễn Thành Vinh
 - `23120256` — Trần Đại Hiệp
 
-> **Pending Screen Recording:** Live deployment is verified at [`https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com`](https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com). Populate `<TODO_RECORDING_URL>` below after recording the `<= 5 min` Criterion 1 walk-through, then merge to `main` and push tag `pa3`.
-
 ---
 
 ## 1. Required Submission Links & Deliverables
@@ -16,8 +14,8 @@
 |---|---|
 | **1. Public Repository** | [`https://github.com/danhuupham/leetkob`](https://github.com/danhuupham/leetkob) |
 | **2. Live Deployment URL** | [`https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com`](https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com) *(Azure `malaysiawest`, `Standard_B2als_v2`, HTTPS via Caddy + separate `leetkob-worker` systemd host process)* |
-| **3. Screen Recording (`<= 5 min`, Criterion 1 flow)** | `<TODO_RECORDING_URL>` |
-| **4. Tag `pa3` & CI Run (with `gates`, `e2e`, `sandbox`)** | **Tag `pa3`:** [`https://github.com/danhuupham/leetkob/tree/pa3`](https://github.com/danhuupham/leetkob/tree/pa3) *(to be pushed after merging `PA3.md`)* · **Tag CI Runs:** [`https://github.com/danhuupham/leetkob/actions?query=branch%3Apa3`](https://github.com/danhuupham/leetkob/actions?query=branch%3Apa3) · **Latest `main` CI Run:** [`45121970141`](https://github.com/danhuupham/leetkob/actions/runs/45121970141) (`gates`, `e2e`, `sandbox` all green) · **Sandbox PR #15 CI Run:** [`45101429261`](https://github.com/danhuupham/leetkob/actions/runs/45101429261) |
+| **3. Screen Recording (`<= 5 min`, Criterion 1 flow)** | [Criterion 1 Live Walk-Through (57s, 720p)](https://drive.google.com/file/d/1iyJBe8sGlwXCBySdytCFiFyqBbwHpFCE/view?usp=sharing) |
+| **4. Tag `pa3` & CI Run (with `gates`, `e2e`, `sandbox`)** | **Tag `pa3`:** [`https://github.com/danhuupham/leetkob/tree/pa3`](https://github.com/danhuupham/leetkob/tree/pa3) · **Tag CI Runs:** [`https://github.com/danhuupham/leetkob/actions?query=branch%3Apa3`](https://github.com/danhuupham/leetkob/actions?query=branch%3Apa3) · **Latest `main` CI Run:** [`45121970141`](https://github.com/danhuupham/leetkob/actions/runs/45121970141) (`gates`, `e2e`, `sandbox` all green) · **Sandbox PR #15 CI Run:** [`45101429261`](https://github.com/danhuupham/leetkob/actions/runs/45101429261) |
 | **5. Checker Command, Docker Build & `MODEL_OFF=1`** | [`src/cli/check-dataset.js`](src/cli/check-dataset.js) · [`Dockerfile.checker`](Dockerfile.checker) · [`README.md` §3](README.md#L104-L125) · [Section 3 below](#3-checker-command-docker-build-line--model_off1-switch) |
 | **6. Committed Dev-Set Real-Model Run** | [`eval/runs/pa3-dev/`](eval/runs/pa3-dev/report.txt) (`predictions.jsonl`, `report.txt`, `call-log.jsonl`) · [Section 4 below](#4-committed-dev-set-real-model-evaluation-evalrunspa3-dev) |
 | **7. Team Custom Eval Cases (`6` solutions, `12` pairs)** | [`eval/custom-cases/`](eval/custom-cases/labels.jsonl) (`problems/`, `solutions/`, `labels.jsonl` covering `trap`, `disguised`, `injection`, `style`) |
