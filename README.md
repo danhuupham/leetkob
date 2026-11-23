@@ -47,12 +47,13 @@ npm start
 
 ## PA#3 Lab Submission Demo
 
-Run the real migration and seed, then start the app:
+Run the real migration and seed, then start the HTTP server and separate judge worker in two terminals:
 
 ```bash
 npm run migrate
 npm run seed
-npm start
+npm start        # Terminal 1: HTTP server
+npm run worker   # Terminal 2: separate durable judge worker
 ```
 
 Open `http://localhost:3007`. Enter a bearer token in the Bearer token field:
@@ -61,17 +62,17 @@ Open `http://localhost:3007`. Enter a bearer token in the Bearer token field:
 - TA: `tok-ta-b`
 - Admin: `tok-admin`
 
-Students load Lab 3, submit C++ source, and receive a `202` queued response. TAs load their class labs, inspect the review queue, and publish after the deadline and all reviews are complete. Hidden test inputs and expected outputs are never included by `GET /api/labs/:labId`.
+Students load Lab 3, submit C++ source, and see live judged results (`queued` → `running` → `done`). TAs create labs, inspect the review queue (verdict, evidence lines, deduction), review flagged constraints, and publish after the deadline and all reviews are complete. Hidden test inputs and expected outputs are never included by `GET /api/labs/:labId`.
 
 Run Docker deployment assets with:
 
 ```bash
 docker build -t leetkob-app .
 docker build -t leetkob-sandbox -f Dockerfile.sandbox .
-docker compose up --build
+SESSION_SECRET=<random-secret> MODEL_API_KEY=<gemini-key> docker compose up --build
 ```
 
-The app starts migrations automatically. SQLite is stored in the `leetkob-data` volume. The app and worker are separate Compose services. Docker socket access is intentionally not mounted into containers; a host with Docker must provide the judge runtime separately.
+The app starts migrations automatically (`USER node`). SQLite is stored in `/data` (`leetkob-data` volume by default). The app and worker are separate services; Docker socket access is intentionally not mounted into containers (`M8`). For live Docker sandbox judging on a VPS, bind a shared data directory (`LEETKOB_DATA_DIR=./data`) for the `app` container and run `DATABASE_URL=./data/leetkob.sqlite npm run worker` on the host with Docker installed.
 
 ---
 
@@ -87,7 +88,8 @@ Every check runs with one documented command locally and in GitHub Actions (`.gi
 | **Format check** | `npm run format:check` | `prettier --check .` (Prettier 3) |
 | **Type check** | `npm run typecheck` | `tsc --noEmit` (TypeScript 7 with `checkJs: true`, `strict: true`) |
 | **Unit tests** | `npm test` | `node --test --test-reporter=spec "test/unit/**/*.test.js"` (25 unit tests) |
-| **Contract tests** | `npm run contract` | `node --test --test-reporter=spec "test/contract/**/*.test.js"` (22 contract tests) |
+| **Contract tests** | `npm run contract` | `node --test --test-reporter=spec "test/contract/**/*.test.js"` (49 contract tests) |
+| **Sandbox attack tests** | `npm run test:sandbox` | `node --test --test-reporter=spec "test/sandbox/**/*.test.js"` (14 Docker `M1`–`M9` tests) |
 | **Secret scan (tree + history)** | `npm run scan` | `node scripts/scan-secrets.js` (scans working tree & `git log -p --all`) |
 | **Eval dataset SHA-256 check** | `npm run verify:eval` | `node scripts/verify-eval.js` (verifies byte-for-byte SHA-256 of `leetkob-eval/`) |
 | **All synchronous gates** | `npm run check` | Runs `lint` + `format:check` + `typecheck` + `test` + `contract` + `scan` + `verify:eval` |

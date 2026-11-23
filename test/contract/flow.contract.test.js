@@ -27,13 +27,7 @@ function validLab() {
 }
 
 /**
- * Start a PA3 application with an isolated SQLite database.
- *
- * PA2 is migrated and seeded first.
- * The PA3 migration is then applied in memory.
- *
- * This helper does not change src/db.js,
- * existing migrations, or the PA2 test helper.
+ * Start a PA3 application with an isolated in-memory SQLite database.
  */
 async function startPa3App() {
   return startApp();
@@ -273,6 +267,102 @@ test('SUBMISSION AC4: submission after deadline is rejected', async () => {
 
     assert.equal(response.status, 409);
     assert.match(response.type, /application\/problem\+json/);
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/me returns role and accessible classes and rejects unauthenticated requests', async () => {
+  const app = await startApp();
+  try {
+    const unauth = await app.as(null).get('/api/me');
+    assert.equal(unauth.status, 401);
+
+    const admin = await app.as('admin').get('/api/me');
+    assert.equal(admin.status, 200);
+    assert.deepEqual(admin.body.classes, [1, 2]);
+
+    const taA = await app.as('ta_a').get('/api/me');
+    assert.equal(taA.status, 200);
+    assert.deepEqual(taA.body.classes, [1]);
+
+    const stu3 = await app.as('stu3').get('/api/me');
+    assert.equal(stu3.status, 200);
+    assert.deepEqual(stu3.body.classes, [2]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/classes/:classId/labs validates class existence, dates, limits, and constraint id/code normalization', async () => {
+  const app = await startApp();
+  try {
+    const missingClass = await app.as('admin').post('/api/classes/999/labs', validLab());
+    assert.equal(missingClass.status, 404);
+
+    const badCalendarDate = await app.as('ta_a').post('/api/classes/1/labs', {
+      ...validLab(),
+      deadlineAt: '2026-02-31 00:00:00',
+    });
+    assert.equal(badCalendarDate.status, 400);
+
+    const badCpu = await app.as('ta_a').post('/api/classes/1/labs', {
+      ...validLab(),
+      cpuLimitSec: 9,
+    });
+    assert.equal(badCpu.status, 400);
+
+    const dupTrimmed = await app.as('ta_a').post('/api/classes/1/labs', {
+      ...validLab(),
+      constraints: [
+        { code: ' C1 ', text: 'Rule 1', deduction: 2 },
+        { code: 'C1', text: 'Rule 2', deduction: 3 },
+      ],
+    });
+    assert.equal(dupTrimmed.status, 400);
+
+    const ok = await app.as('ta_a').post('/api/classes/1/labs', {
+      ...validLab(),
+      cpuLimitSec: 2,
+      memoryLimitMb: 512,
+      constraints: [{ id: ' C1 ', text: ' Do not use std::sort ', deduction: 3 }],
+    });
+    assert.equal(ok.status, 201);
+    assert.equal(ok.body.cpuLimitSec, 2);
+    assert.equal(ok.body.memoryLimitMb, 512);
+    assert.equal(ok.body.constraints[0].code, 'C1');
+
+    const details = await app.as('stu1').get(`/api/labs/${ok.body.id}`);
+    assert.equal(details.status, 200);
+    assert.equal(typeof details.body.reviewNotice, 'string');
+    assert.ok(details.body.reviewNotice.includes('hard rules'));
+    assert.equal(details.body.cpuLimitSec, 2);
+    assert.equal(details.body.memoryLimitMb, 512);
+    assert.equal(Object.hasOwn(details.body, 'tests'), false);
+    assert.equal(Object.hasOwn(details.body, 'lab_tests'), false);
+  } finally {
+    await app.close();
+  }
+});
+
+test('POST /api/labs/:labId/submissions blocks TAs (403/404) and >1MiB payloads (400 code-too-large)', async () => {
+  const app = await startApp();
+  try {
+    const sameClassTa = await app.as('ta_b').post('/api/labs/3/submissions', {
+      code: 'int main() { return 0; }',
+    });
+    assert.equal(sameClassTa.status, 403);
+
+    const otherClassTa = await app.as('ta_a').post('/api/labs/3/submissions', {
+      code: 'int main() { return 0; }',
+    });
+    assert.equal(otherClassTa.status, 404);
+
+    const oversized = await app.as('stu3').post('/api/labs/3/submissions', {
+      code: 'x'.repeat(1_200_000),
+    });
+    assert.equal(oversized.status, 400);
+    assert.equal(oversized.body.type, 'https://leetkob.example/problems/code-too-large');
   } finally {
     await app.close();
   }

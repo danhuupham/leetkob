@@ -8,6 +8,9 @@ COPY public ./public
 COPY migrations ./migrations
 COPY scripts ./scripts
 
+RUN mkdir -p /data && chown node:node /data
+USER node
+
 ENV NODE_ENV=production
 EXPOSE 3007
 CMD ["sh", "-c", "node scripts/migrate.js && node src/server.js"]

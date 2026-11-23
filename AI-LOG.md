@@ -170,3 +170,24 @@ Rejected:
 - **Rejected setting `thinkingLevel: 'MINIMAL'` for `gemini-3.8-flash`:** `gemini-3.8-flash` only supports `low`, `medium`, and `high`; `LOW` works cleanly across both `gemini-3-flash-preview` and `gemini-3.8-flash`.
 - **Rejected permanent `Set`-based key blacklisting:** On a long-running VPS worker, a `Set` without expiry would permanently outage the worker after a single daily-quota hit; replaced with an expiring `Map<string, number>` cooldown verified by unit tests.
 By hand: Rebuilt `leetkob-checker`, verified `docker run --rm --network none -e NODE_ENV=production -e MODEL_OFF=1` outputs 102 valid JSONL lines, verified `git diff -- leetkob-eval/` is empty, confirmed `npm run check` (`25/25` unit, `22/22` contract, `scan`, `verify:eval`) passes.
+
+---
+
+## Entry 11 · 2026-11-23 — Task `T3.6`: Web Flow, Queue/Publish Gates, Separate Worker & Docker Deployment (`b6c289f`..`fe9d16a`, merged forward)
+Tool: Antigravity
+Asked for: Integrate `T3.1`–`T3.5` cleanly into `feat/pa3-web-flow` via merge-forward (without force-pushing or overwriting upstream subsystem files), fix all PR #17 review findings (separate worker process, `FAQ-04`/`FAQ-06`/`FAQ-08`/`FAQ-09`/`FAQ-10` grading & visibility rules, `publish`/`queue` gates, Docker non-root & env validation, TA/student web UI, and contract tests), and verify `npm run check` + `npm run e2e`.
+Kept:
+- Kept canonical upstream subsystem implementations intact via merge-forward from `origin/feat/pa3-checker-cli` (which includes `main` `T3.2`/`T3.3`, `T3.4`, `T3.5`) and `origin/feat/pa3-queue` (`T3.1`), preserving `test/contract/queue.contract.test.js` (`AC1`–`AC5`) and the SQLite `submitted_at` migration backfill.
+- Kept `GET /api/labs/:labId` isolated from `lab_tests`, `GET /api/submissions/:id` hiding all `constraintVerdicts`/`deductions`/`mark` before publish (`FAQ-08`), `POST /api/classes/:classId/labs`, `POST /api/labs/:labId/submissions`, and `POST /api/verdicts/:verdictId/review`.
+Changed:
+- Removed inline `startWorkerLoop()` from `src/server.js` so web requests and background judging run in strictly separate processes (`npm start` vs `npm run worker` / `scripts/worker.js`, `PA#3` Criterion 2).
+- Fixed `GET /api/submissions/:id` post-publish grading: returned `0` for non-`AC` submissions without `manual_mark` (`FAQ-04`), removed the `cv.verdict = 'violation'` filter so TA-confirmed `unsure` or overridden verdicts (`cv.ta_decision = 'violation'`) apply deductions via `markFor` (`FAQ-09`/`FAQ-10`), and exposed `judgeStatus` alongside `status`.
+- Fixed `GET /api/labs/:labId/queue` (`JOIN lab_constraints` for `deduction` and `ruleText`, kept reviewed PA3 verdicts visible with `taDecision`, and added `submissions` overview of all counted submissions) and validated `POST /api/verdicts/:verdictId/review` evidence line bounds against `submissions.code`.
+- Updated `POST /api/labs/:labId/publish` to block on `judge_status != 'done'` or `judge_jobs.status IN ('queued', 'running', 'failed')`, and updated `POST /api/classes/:classId/labs` to verify `classes` existence (fixing orphan labs by `admin`), strict UTC calendar dates, `cpuLimitSec`/`memoryLimitMb` (`FAQ-05`), and `constraints.json` `id`/`code` normalization.
+- Fixed `public/index.html` + `public/client.js` + `public/styles.css`: moved Create Lab outside `#labPanel` with class selection, fixed the `#who` `setTimeout(loadLab, 50)` race, added `FAQ-06` `reviewNotice`, added live submission polling + post-publish mark/deduction display, and rendered full TA queue details + **Mark Pass** / **Confirm Violation** (with inline evidence inputs instead of placeholder text).
+- Hardened `Dockerfile` (`USER node`, owned `/data`) and `compose.yaml` (removed fake default secrets and silent `MODEL_OFF=1`, added required `SESSION_SECRET` and `MODEL_API_KEY` on both `app` and `worker`).
+- Added comprehensive contract tests in `test/contract/flow.contract.test.js` and `test/contract/pa3.contract.test.js` covering all fixes.
+Rejected:
+- **Rejected keeping duplicated upstream `src/checker/*`, `src/sandbox/*`, and `src/worker.js` snapshots from `fe9d16a`:** Those copies lagged behind PR #15/`T3.1`/PR #16 fixes and would clobber upstream bug fixes on merge; resolved merge conflicts strictly with `--theirs` (`origin/feat/pa3-checker-cli` and `origin/feat/pa3-queue`).
+- **Rejected running `startWorkerLoop` inside `src/server.js` and auto-filling fake `'(TA evidence required)'` in `public/client.js`:** Both violate `PA#3` Criterion 2 (separate worker test) and `FAQ-09` (TA must cite real source lines).
+By hand: Verified `git diff origin/main -- leetkob-eval/ docs/contract/publish.md test/contract/publish.contract.test.js e2e/publish.spec.js` is empty, verified `npm run check` (`25/25` unit, `49/49` contract, `scan`, `verify:eval`) and `npm run e2e` (`1/1`) pass.

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "worker": "node scripts/worker.js",
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
     "lint": "eslint .",

@@ -1,7 +1,20 @@
-// TA review queue listing and individual submission review decisions.
+// TA review queue listing and individual submission/verdict review decisions.
 import { send, problem, readJson } from '../http.js';
 import { parsePositiveInt } from '../auth.js';
 import { needsReview } from '../grades.js';
+
+/**
+ * @param {string | null | undefined} raw
+ * @returns {Array<{ line: number, text: string }>}
+ */
+function parseEvidenceJson(raw) {
+  try {
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * @param {import('node:sqlite').DatabaseSync} db
@@ -25,13 +38,17 @@ export function createQueueRoutes(db, auth) {
     review: db.prepare('UPDATE submissions SET decision = ? WHERE id = ?'),
     pa3Queue: db.prepare(
       `SELECT cv.id, cv.submission_id, u.name AS student,
-              cv.constraint_code, cv.verdict, cv.source,
-              cv.unsure_reason, cv.evidence_json, cv.ta_decision
+              cv.constraint_code, lc.rule_text, lc.deduction,
+              cv.verdict, cv.source, cv.unsure_reason,
+              cv.evidence_json, cv.model_rationale, cv.ta_decision
        FROM constraint_verdicts cv
        JOIN submissions s ON s.id = cv.submission_id
        JOIN users u ON u.id = s.student_id
        JOIN labs l ON l.id = s.lab_id
+       JOIN lab_constraints lc
+         ON lc.lab_id = s.lab_id AND lc.constraint_code = cv.constraint_code
        WHERE s.lab_id = ?
+         AND s.test_verdict = 'AC'
          AND s.id = (
            SELECT MAX(s2.id)
            FROM submissions s2
@@ -40,11 +57,45 @@ export function createQueueRoutes(db, auth) {
              AND s2.submitted_at <= l.deadline_at
          )
          AND cv.verdict IN ('violation', 'unsure')
-         AND cv.ta_decision IS NULL
        ORDER BY cv.id`,
     ),
+    countedSubmissions: db.prepare(
+      `SELECT s.id, u.name AS student, s.judge_status, s.test_verdict, s.submitted_at
+       FROM submissions s
+       JOIN users u ON u.id = s.student_id
+       JOIN labs l ON l.id = s.lab_id
+       WHERE s.lab_id = ?
+         AND s.code != ''
+         AND s.id = (
+           SELECT MAX(s2.id)
+           FROM submissions s2
+           WHERE s2.lab_id = s.lab_id
+             AND s2.student_id = s.student_id
+             AND s2.submitted_at <= l.deadline_at
+         )
+       ORDER BY s.id`,
+    ),
+    countedVerdicts: db.prepare(
+      `SELECT cv.id, cv.submission_id, cv.constraint_code, lc.rule_text, lc.deduction,
+              cv.verdict, cv.source, cv.unsure_reason, cv.evidence_json,
+              cv.model_rationale, cv.ta_decision
+       FROM constraint_verdicts cv
+       JOIN submissions s ON s.id = cv.submission_id
+       JOIN labs l ON l.id = s.lab_id
+       JOIN lab_constraints lc
+         ON lc.lab_id = s.lab_id AND lc.constraint_code = cv.constraint_code
+       WHERE s.lab_id = ?
+         AND s.id = (
+           SELECT MAX(s2.id)
+           FROM submissions s2
+           WHERE s2.lab_id = s.lab_id
+             AND s2.student_id = s.student_id
+             AND s2.submitted_at <= l.deadline_at
+         )
+       ORDER BY cv.submission_id, cv.id`,
+    ),
     verdict: db.prepare(
-      `SELECT cv.id, cv.submission_id, l.class_id, l.published_at
+      `SELECT cv.id, cv.submission_id, s.code, l.class_id, l.published_at
        FROM constraint_verdicts cv
        JOIN submissions s ON s.id = cv.submission_id
        JOIN labs l ON l.id = s.lab_id
@@ -90,19 +141,57 @@ export function createQueueRoutes(db, auth) {
               verdict: s.verdict,
               decision: s.decision,
             }));
+
         const pa3Items =
-          /** @type {Array<{ id: number, submission_id: number, student: string, constraint_code: string, verdict: string, source: string, unsure_reason: string|null, evidence_json: string, ta_decision: string|null }>} */ (
+          /** @type {Array<{ id: number, submission_id: number, student: string, constraint_code: string, rule_text: string, deduction: number, verdict: string, source: string, unsure_reason: string | null, evidence_json: string, model_rationale: string | null, ta_decision: string | null }>} */ (
             q.pa3Queue.all(lab.id)
           ).map((v) => ({
             id: v.submission_id,
             verdictId: v.id,
             student: v.student,
             constraintCode: v.constraint_code,
+            ruleText: v.rule_text,
+            deduction: v.deduction,
             verdict: v.verdict,
             source: v.source,
             unsureReason: v.unsure_reason,
-            evidence: JSON.parse(v.evidence_json),
+            evidence: parseEvidenceJson(v.evidence_json),
+            rationale: v.model_rationale,
+            taDecision: v.ta_decision,
             decision: v.ta_decision,
+          }));
+
+        /** @type {Map<number, Array<Record<string, unknown>>>} */
+        const verdictsBySub = new Map();
+        for (const v of /** @type {Array<{ id: number, submission_id: number, constraint_code: string, rule_text: string, deduction: number, verdict: string, source: string, unsure_reason: string | null, evidence_json: string, model_rationale: string | null, ta_decision: string | null }>} */ (
+          q.countedVerdicts.all(lab.id)
+        )) {
+          const list = verdictsBySub.get(v.submission_id) ?? [];
+          list.push({
+            verdictId: v.id,
+            constraintCode: v.constraint_code,
+            ruleText: v.rule_text,
+            deduction: v.deduction,
+            verdict: v.verdict,
+            source: v.source,
+            unsureReason: v.unsure_reason,
+            evidence: parseEvidenceJson(v.evidence_json),
+            rationale: v.model_rationale,
+            taDecision: v.ta_decision,
+          });
+          verdictsBySub.set(v.submission_id, list);
+        }
+
+        const submissions =
+          /** @type {Array<{ id: number, student: string, judge_status: string, test_verdict: string, submitted_at: string }>} */ (
+            q.countedSubmissions.all(lab.id)
+          ).map((s) => ({
+            id: s.id,
+            student: s.student,
+            judgeStatus: s.judge_status,
+            testVerdict: s.test_verdict,
+            submittedAt: s.submitted_at,
+            verdicts: verdictsBySub.get(s.id) ?? [],
           }));
 
         return send(res, 200, {
@@ -110,6 +199,7 @@ export function createQueueRoutes(db, auth) {
           publishedAt: lab.published_at,
           costSpentUsd: lab.cost_spent_usd,
           items: [...legacyItems, ...pa3Items],
+          submissions,
         });
       },
     ],
@@ -132,7 +222,12 @@ export function createQueueRoutes(db, auth) {
         }
 
         const body = await readJson(req);
-        if (!body || !['confirm', 'overturn'].includes(body.decision)) {
+        if (
+          !body ||
+          body.__nonObjectJson ||
+          body.__payloadTooLarge ||
+          !['confirm', 'overturn'].includes(body.decision)
+        ) {
           return problem(res, 400, 'validation', 'Invalid request', {
             detail: 'decision field must be either confirm or overturn',
             errors: [{ pointer: '/decision', detail: 'must be confirm or overturn' }],
@@ -153,7 +248,7 @@ export function createQueueRoutes(db, auth) {
         const verdictId = parsePositiveInt(params.verdictId);
         const verdict =
           verdictId !== null
-            ? /** @type {{ id: number, submission_id: number, class_id: number, published_at: string|null } | undefined} */ (
+            ? /** @type {{ id: number, submission_id: number, code: string, class_id: number, published_at: string | null } | undefined} */ (
                 q.verdict.get(verdictId)
               )
             : undefined;
@@ -165,14 +260,20 @@ export function createQueueRoutes(db, auth) {
         }
 
         const body = await readJson(req);
-        if (!body || body.__nonObjectJson || !['pass', 'violation'].includes(body.taDecision)) {
+        if (
+          !body ||
+          body.__nonObjectJson ||
+          body.__payloadTooLarge ||
+          !['pass', 'violation'].includes(body.taDecision)
+        ) {
           return problem(res, 400, 'validation', 'Invalid request', {
             detail: 'taDecision must be pass or violation',
           });
         }
-        if (
-          body.taDecision === 'violation' &&
-          (!Array.isArray(body.evidence) ||
+
+        if (body.taDecision === 'violation') {
+          if (
+            !Array.isArray(body.evidence) ||
             body.evidence.length === 0 ||
             body.evidence.some(
               (e) =>
@@ -181,11 +282,25 @@ export function createQueueRoutes(db, auth) {
                 e.line < 1 ||
                 typeof e.text !== 'string' ||
                 e.text.trim().length === 0,
-            ))
-        ) {
-          return problem(res, 400, 'validation', 'Invalid evidence', {
-            detail: 'Violation decisions require non-empty valid evidence',
-          });
+            )
+          ) {
+            return problem(res, 400, 'validation', 'Invalid evidence', {
+              detail: 'Violation decisions require non-empty valid evidence',
+            });
+          }
+
+          const rawCode = String(verdict.code || '');
+          if (rawCode.length > 0) {
+            const codeLines = rawCode.split('\n');
+            const outOfRangeOrBlank = body.evidence.some(
+              (e) => e.line > codeLines.length || codeLines[e.line - 1].trim().length === 0,
+            );
+            if (outOfRangeOrBlank) {
+              return problem(res, 400, 'validation', 'Invalid evidence', {
+                detail: 'Evidence line must reference a non-empty line in the submission source',
+              });
+            }
+          }
         }
 
         const evidence = body.taDecision === 'violation' ? body.evidence : [];

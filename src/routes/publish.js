@@ -29,11 +29,13 @@ export function createPublishRoutes(db, auth) {
     ),
     activeJobs: db.prepare(
       `SELECT COUNT(*) AS count
-       FROM judge_jobs j
-       JOIN submissions s ON s.id = j.submission_id
-       JOIN labs l ON l.id = s.lab_id
+       FROM submissions s
+       LEFT JOIN judge_jobs j ON j.submission_id = s.id
        WHERE s.lab_id = ?
-         AND j.status IN ('queued', 'running')`,
+         AND (
+           s.judge_status != 'done'
+           OR j.status IN ('queued', 'running', 'failed')
+         )`,
     ),
     pa3Pending: db.prepare(
       `SELECT COUNT(*) AS count
@@ -41,6 +43,7 @@ export function createPublishRoutes(db, auth) {
        JOIN submissions s ON s.id = cv.submission_id
        JOIN labs l ON l.id = s.lab_id
        WHERE s.lab_id = ?
+         AND s.test_verdict = 'AC'
          AND s.id = (
            SELECT MAX(s2.id)
            FROM submissions s2
@@ -105,7 +108,7 @@ export function createPublishRoutes(db, auth) {
             detail: 'Request body is not valid JSON',
           });
         }
-        if (body.__nonObjectJson) {
+        if (body.__nonObjectJson || body.__payloadTooLarge) {
           return problem(res, 400, 'validation', 'Invalid request', {
             detail: 'Request body must be a JSON object or empty',
             errors: [{ pointer: '', detail: 'request body must be a JSON object or empty' }],
@@ -120,11 +123,11 @@ export function createPublishRoutes(db, auth) {
           });
         }
 
-        // Refuse while any judge job is still queued/running.
+        // Refuse while any judge job is still queued, running, or failed.
         const activeJobs = /** @type {{ count: number }} */ (q.activeJobs.get(lab.id)).count;
         if (activeJobs > 0) {
           return problem(res, 409, 'reviews-pending', 'Reviews pending', {
-            detail: `${activeJobs} submission(s) still have queued or running judge jobs`,
+            detail: `${activeJobs} submission(s) have incomplete or failed judge jobs`,
             pending: activeJobs,
           });
         }

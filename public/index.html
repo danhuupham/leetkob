@@ -27,9 +27,46 @@
       </section>
 
       <section id="app" hidden>
-        <label for="labId">Lab ID</label>
-        <input id="labId" type="number" min="1" value="3" />
-        <button id="loadLab" type="button">Load lab</button>
+        <div class="lab-picker">
+          <label for="labId">Lab ID</label>
+          <input id="labId" type="number" min="1" value="3" />
+          <button id="loadLab" type="button">Load lab</button>
+        </div>
+
+        <section id="createLabSection" hidden>
+          <h3>Create lab</h3>
+          <label for="classId">Class</label>
+          <select id="classId"></select>
+          <label for="newTitle">Title</label>
+          <input id="newTitle" type="text" />
+          <label for="newStatement">Statement</label>
+          <textarea id="newStatement" rows="6"></textarea>
+          <label for="newDeadline">Deadline (YYYY-MM-DD HH:mm:ss UTC)</label>
+          <input id="newDeadline" type="text" value="2099-12-31 23:59:59" />
+          <div class="limits-row">
+            <div>
+              <label for="newCpuLimit">CPU limit (1–5s)</label>
+              <input id="newCpuLimit" type="number" min="1" max="5" value="1" />
+            </div>
+            <div>
+              <label for="newMemoryLimit">Memory limit (64–512 MB)</label>
+              <input id="newMemoryLimit" type="number" min="64" max="512" value="256" />
+            </div>
+          </div>
+          <label for="newTests">Hidden tests JSON</label>
+          <textarea
+            id="newTests"
+            rows="5"
+            placeholder='[{"input":"...","expectedOutput":"..."}]'
+          ></textarea>
+          <label for="newConstraints">Public constraints JSON</label>
+          <textarea
+            id="newConstraints"
+            rows="5"
+            placeholder='[{"code":"C1","text":"Do not use std::sort","deduction":2}]'
+          ></textarea>
+          <button id="createLab" type="button">Create lab</button>
+        </section>
 
         <article id="labPanel" hidden>
           <h2 id="labTitle"></h2>
@@ -39,36 +76,22 @@
           <ul id="constraints"></ul>
 
           <div id="studentPanel" hidden>
+            <p id="reviewNotice" class="notice"></p>
             <label for="code">C++ source</label>
             <textarea id="code" rows="16" spellcheck="false"></textarea>
-            <button id="submit" type="button">Submit C++</button>
+            <div class="actions">
+              <button id="submit" type="button">Submit C++</button>
+              <button id="refreshSubmission" type="button" hidden>Refresh result</button>
+            </div>
             <pre id="submissionResult"></pre>
           </div>
 
           <div id="taPanel" hidden>
-            <h3>Create lab</h3>
-            <label for="newTitle">Title</label>
-            <input id="newTitle" type="text" />
-            <label for="newStatement">Statement</label>
-            <textarea id="newStatement" rows="6"></textarea>
-            <label for="newDeadline">Deadline (YYYY-MM-DD HH:mm:ss)</label>
-            <input id="newDeadline" type="text" value="2099-12-31 23:59:59" />
-            <label for="newTests">Hidden tests JSON</label>
-            <textarea
-              id="newTests"
-              rows="5"
-              placeholder='[{"input":"...","expectedOutput":"..."}]'
-            ></textarea>
-            <label for="newConstraints">Public constraints JSON</label>
-            <textarea
-              id="newConstraints"
-              rows="5"
-              placeholder='[{"code":"C1","text":"Do not use std::sort","deduction":2}]'
-            ></textarea>
-            <button id="createLab" type="button">Create lab</button>
             <h3>Review queue</h3>
             <ul id="queue"></ul>
             <button id="publish" type="button">Publish grades</button>
+            <h3>Counted submissions</h3>
+            <ul id="submissionsOverview"></ul>
           </div>
         </article>
       </section>

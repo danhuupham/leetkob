@@ -1,6 +1,32 @@
 import { send, problem, readJson } from '../http.js';
 import { parsePositiveInt } from '../auth.js';
 
+export const FAQ_06_REVIEW_NOTICE =
+  'Accepted C++ submissions are checked by deterministic hard rules and an AI model. The model receives only the problem statement, constraint text, and code with comments, student names, and student IDs removed. The model never decides marks — a TA reviews flagged verdicts before grades are published.';
+
+/**
+ * Validates strict UTC `YYYY-MM-DD HH:mm:ss` calendar datetime strings.
+ * @param {unknown} value
+ * @returns {value is string}
+ */
+function isValidUtcDateTime(value) {
+  if (typeof value !== 'string') return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(value);
+  if (!m) return false;
+  const [, ys, ms, ds, hs, mins, ss] = m;
+  const d = new Date(
+    Date.UTC(Number(ys), Number(ms) - 1, Number(ds), Number(hs), Number(mins), Number(ss)),
+  );
+  return (
+    d.getUTCFullYear() === Number(ys) &&
+    d.getUTCMonth() === Number(ms) - 1 &&
+    d.getUTCDate() === Number(ds) &&
+    d.getUTCHours() === Number(hs) &&
+    d.getUTCMinutes() === Number(mins) &&
+    d.getUTCSeconds() === Number(ss)
+  );
+}
+
 /**
  * Lab routes for PA3.
  *
@@ -9,108 +35,82 @@ import { parsePositiveInt } from '../auth.js';
  * @returns {import('../http.js').RouteEntry[]}
  */
 export function createLabRoutes(db, auth) {
-  // PA2-compatible query.
-  // Do not reference PA3-only columns during app startup.
-  const findLab = db.prepare(`
-    SELECT
-      id,
-      class_id,
-      title,
-      deadline_at,
-      published_at
-    FROM labs
-    WHERE id = ?
-  `);
+  const q = {
+    findLab: db.prepare(`
+      SELECT id, class_id, title, statement, deadline_at, published_at,
+             cpu_limit_sec, memory_limit_mb
+      FROM labs
+      WHERE id = ?
+    `),
+    findConstraints: db.prepare(`
+      SELECT constraint_code AS code, rule_text AS text, deduction
+      FROM lab_constraints
+      WHERE lab_id = ?
+      ORDER BY id
+    `),
+    classExists: db.prepare('SELECT 1 FROM classes WHERE id = ?'),
+    insertLab: db.prepare(`
+      INSERT INTO labs
+        (class_id, title, statement, deadline_at, cpu_limit_sec, memory_limit_mb)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `),
+    insertTest: db.prepare(`
+      INSERT INTO lab_tests (lab_id, ordinal, input_text, expected_output)
+      VALUES (?, ?, ?, ?)
+    `),
+    insertConstraint: db.prepare(`
+      INSERT INTO lab_constraints (lab_id, constraint_code, rule_text, deduction)
+      VALUES (?, ?, ?, ?)
+    `),
+  };
 
   return [
-    // --------------------------------------------------
-    // GET /api/labs/:labId
-    // View lab statement and public constraints.
-    // Hidden test cases must never be exposed.
-    // --------------------------------------------------
+    // GET /api/labs/:labId — View lab statement & public constraints (never hidden tests).
     [
       'GET',
       '/api/labs/:labId',
       (req, res, params) => {
-        // 1. Require authentication.
         const me = auth.requireAuth(req, res);
         if (!me) return;
 
-        // 2. Validate lab ID.
         const labId = parsePositiveInt(params.labId);
-
         if (labId === null) {
           return problem(res, 404, 'not-found', 'No such lab');
         }
 
-        // 3. Find the lab.
-        const lab = findLab.get(labId);
-
+        const lab =
+          /** @type {{ id: number, class_id: number, title: string, statement: string, deadline_at: string, published_at: string | null, cpu_limit_sec: number, memory_limit_mb: number } | undefined} */ (
+            q.findLab.get(labId)
+          );
         if (!lab) {
           return problem(res, 404, 'not-found', 'No such lab');
         }
 
         const classId = Number(lab.class_id);
-
-        // 4. Check class access.
         const isStudent = me.role === 'student' && auth.isEnrolled(me, classId);
-
         const isStaff = me.role !== 'student' && auth.isStaff(me, classId);
-
         if (!isStudent && !isStaff) {
           return problem(res, 404, 'not-found', 'No such lab');
         }
 
-        // 5. Read PA3-only fields after authorization.
-        // Preparing these statements inside the handler
-        // keeps PA2 contract tests compatible.
-        const details = db
-          .prepare(
-            `
-            SELECT statement
-            FROM labs
-            WHERE id = ?
-          `,
-          )
-          .get(labId);
+        const constraints = q.findConstraints.all(labId);
 
-        if (!details) {
-          return problem(res, 404, 'not-found', 'No such lab');
-        }
-
-        // 6. Load PUBLIC constraints only.
-        // Never query lab_tests for this endpoint.
-        const constraints = db
-          .prepare(
-            `
-            SELECT
-              constraint_code AS code,
-              rule_text AS text,
-              deduction
-            FROM lab_constraints
-            WHERE lab_id = ?
-            ORDER BY id
-          `,
-          )
-          .all(labId);
-
-        // 7. Return safe lab information.
         return send(res, 200, {
           id: Number(lab.id),
           classId,
           title: lab.title,
-          statement: details.statement,
+          statement: lab.statement,
           deadlineAt: lab.deadline_at,
           publishedAt: lab.published_at,
+          cpuLimitSec: Number(lab.cpu_limit_sec),
+          memoryLimitMb: Number(lab.memory_limit_mb),
+          reviewNotice: FAQ_06_REVIEW_NOTICE,
           constraints,
         });
       },
     ],
 
-    // --------------------------------------------------
-    // POST /api/classes/:classId/labs
-    // Create a lab with tests and constraints.
-    // --------------------------------------------------
+    // POST /api/classes/:classId/labs — Create a lab with hidden tests & public constraints.
     [
       'POST',
       '/api/classes/:classId/labs',
@@ -119,8 +119,7 @@ export function createLabRoutes(db, auth) {
         if (!me) return;
 
         const classId = parsePositiveInt(params.classId);
-
-        if (classId === null) {
+        if (classId === null || !q.classExists.get(classId)) {
           return problem(res, 404, 'not-found', 'No such class');
         }
 
@@ -128,22 +127,39 @@ export function createLabRoutes(db, auth) {
           if (auth.isEnrolled(me, classId)) {
             return problem(res, 403, 'forbidden', 'Access denied');
           }
-
           return problem(res, 404, 'not-found', 'No such class');
         }
 
-        // Read and validate request data before writing to SQLite.
         const body = await readJson(req);
-
         if (!body) {
           return problem(res, 400, 'invalid-json', 'Invalid JSON');
+        }
+        if (body.__nonObjectJson || body.__payloadTooLarge) {
+          return problem(res, 400, 'validation', 'Invalid request', {
+            detail: 'Request body must be a valid JSON object',
+          });
         }
 
         const title = body.title;
         const statement = body.statement;
         const deadlineAt = body.deadlineAt;
         const tests = body.tests;
-        const constraints = body.constraints;
+        const rawConstraints = body.constraints;
+        const cpuLimitSec = body.cpuLimitSec ?? 1;
+        const memoryLimitMb = body.memoryLimitMb ?? 256;
+
+        const normalizedConstraints = Array.isArray(rawConstraints)
+          ? rawConstraints.map((c) => ({
+              code:
+                typeof c?.code === 'string'
+                  ? c.code.trim()
+                  : typeof c?.id === 'string'
+                    ? c.id.trim()
+                    : '',
+              text: typeof c?.text === 'string' ? c.text.trim() : '',
+              deduction: c?.deduction,
+            }))
+          : null;
 
         const valid =
           typeof title === 'string' &&
@@ -151,67 +167,53 @@ export function createLabRoutes(db, auth) {
           title.length <= 200 &&
           typeof statement === 'string' &&
           statement.trim().length > 0 &&
-          typeof deadlineAt === 'string' &&
-          /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(deadlineAt) &&
-          !Number.isNaN(Date.parse(deadlineAt.replace(' ', 'T') + 'Z')) &&
+          isValidUtcDateTime(deadlineAt) &&
+          Number.isInteger(cpuLimitSec) &&
+          cpuLimitSec >= 1 &&
+          cpuLimitSec <= 5 &&
+          Number.isInteger(memoryLimitMb) &&
+          memoryLimitMb >= 64 &&
+          memoryLimitMb <= 512 &&
           Array.isArray(tests) &&
           tests.length > 0 &&
           tests.every(
             (t) => t && typeof t.input === 'string' && typeof t.expectedOutput === 'string',
           ) &&
-          Array.isArray(constraints) &&
-          constraints.every(
+          normalizedConstraints !== null &&
+          normalizedConstraints.every(
             (c) =>
-              c &&
-              typeof c.code === 'string' &&
-              c.code.trim().length > 0 &&
-              typeof c.text === 'string' &&
-              c.text.trim().length > 0 &&
+              c.code.length > 0 &&
+              c.text.length > 0 &&
               Number.isInteger(c.deduction) &&
               c.deduction >= 0 &&
               c.deduction <= 10,
           ) &&
-          new Set(constraints.map((c) => c.code)).size === constraints.length;
+          new Set(normalizedConstraints.map((c) => c.code)).size === normalizedConstraints.length;
 
-        if (!valid) {
+        if (!valid || normalizedConstraints === null) {
           return problem(res, 400, 'validation', 'Invalid request', {
             detail: 'Invalid lab fields, tests, or constraints',
           });
         }
 
-        // PA3 migration is required for the following columns/tables.
-        // All writes must succeed or roll back together.
         db.exec('BEGIN IMMEDIATE');
-
         try {
-          const result = db
-            .prepare(
-              `INSERT INTO labs
-                 (class_id, title, statement, deadline_at)
-               VALUES (?, ?, ?, ?)`,
-            )
-            .run(classId, title.trim(), statement, deadlineAt);
-
+          const result = q.insertLab.run(
+            classId,
+            title.trim(),
+            statement,
+            deadlineAt,
+            cpuLimitSec,
+            memoryLimitMb,
+          );
           const labId = Number(result.lastInsertRowid);
 
-          const insertTest = db.prepare(
-            `INSERT INTO lab_tests
-               (lab_id, ordinal, input_text, expected_output)
-             VALUES (?, ?, ?, ?)`,
-          );
-
           for (let i = 0; i < tests.length; i += 1) {
-            insertTest.run(labId, i + 1, tests[i].input, tests[i].expectedOutput);
+            q.insertTest.run(labId, i + 1, tests[i].input, tests[i].expectedOutput);
           }
 
-          const insertConstraint = db.prepare(
-            `INSERT INTO lab_constraints
-               (lab_id, constraint_code, rule_text, deduction)
-             VALUES (?, ?, ?, ?)`,
-          );
-
-          for (const c of constraints) {
-            insertConstraint.run(labId, c.code, c.text, c.deduction);
+          for (const c of normalizedConstraints) {
+            q.insertConstraint.run(labId, c.code, c.text, c.deduction);
           }
 
           db.exec('COMMIT');
@@ -221,11 +223,9 @@ export function createLabRoutes(db, auth) {
             classId,
             title: title.trim(),
             deadlineAt,
-            constraints: constraints.map((c) => ({
-              code: c.code,
-              text: c.text,
-              deduction: c.deduction,
-            })),
+            cpuLimitSec,
+            memoryLimitMb,
+            constraints: normalizedConstraints,
           });
         } catch (error) {
           db.exec('ROLLBACK');
