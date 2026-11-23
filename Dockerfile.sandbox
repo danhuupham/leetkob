@@ -1,0 +1,6 @@
+FROM gcc:13.3-bookworm
+
+RUN test "$(id -u nobody)" = "65534" && chmod 1777 /tmp
+
+USER 65534:65534
+WORKDIR /tmp
