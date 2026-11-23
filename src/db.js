@@ -52,13 +52,6 @@ export function migrate(db) {
     db.exec('BEGIN IMMEDIATE;');
     try {
       db.exec(sql);
-      if (file === '002_pa3_pipeline.sql') {
-        db.prepare(
-          `UPDATE submissions
-           SET submitted_at = datetime('now')
-           WHERE submitted_at = '1970-01-01 00:00:00'`,
-        ).run();
-      }
       markApplied.run(file);
       db.exec('COMMIT;');
       newlyApplied.push(file);
@@ -87,22 +80,11 @@ export function seedDemoData(db) {
       (1, 1, 'Merge sort', '2026-11-01 00:00:00'),
       (2, 2, 'Merge sort', '2026-11-01 00:00:00'),
       (3, 2, 'Binary search', '2099-12-31 23:59:59');
+    INSERT OR IGNORE INTO submissions (id, lab_id, student_id, verdict, decision, submitted_at) VALUES
+      (1, 1, 4, 'violation', NULL, '2026-10-31 23:59:59'),
+      (2, 1, 5, 'pass', NULL, '2026-10-31 23:59:59'),
+      (3, 2, 6, 'violation', 'confirm', '2026-10-31 23:59:59');
   `);
-  db.prepare(
-    `INSERT OR IGNORE INTO submissions
-       (id, lab_id, student_id, verdict, decision, submitted_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-  ).run(1, 1, 4, 'violation', null);
-  db.prepare(
-    `INSERT OR IGNORE INTO submissions
-       (id, lab_id, student_id, verdict, decision, submitted_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-  ).run(2, 1, 5, 'pass', null);
-  db.prepare(
-    `INSERT OR IGNORE INTO submissions
-       (id, lab_id, student_id, verdict, decision, submitted_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-  ).run(3, 2, 6, 'violation', 'confirm');
 }
 
 /**

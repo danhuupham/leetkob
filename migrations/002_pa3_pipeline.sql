@@ -42,10 +42,14 @@ ALTER TABLE submissions ADD COLUMN test_verdict TEXT NOT NULL DEFAULT 'AC'
 ALTER TABLE submissions ADD COLUMN test_results_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE submissions ADD COLUMN manual_mark REAL CHECK (manual_mark IS NULL OR (manual_mark >= 0 AND manual_mark <= 10));
 ALTER TABLE submissions ADD COLUMN manual_reason TEXT;
--- SQLite cannot use datetime('now') as a non-constant DEFAULT in
--- ALTER TABLE ADD COLUMN. Preserve NOT NULL for new rows with a fixed
--- backward-compatible default, then set existing rows to migration time.
+-- SQLite forbids non-constant expressions like datetime('now') in ALTER TABLE ADD COLUMN DEFAULT.
 ALTER TABLE submissions ADD COLUMN submitted_at TEXT NOT NULL DEFAULT '1970-01-01 00:00:00';
+UPDATE submissions
+   SET submitted_at = COALESCE(
+     (SELECT l.deadline_at FROM labs l WHERE l.id = submissions.lab_id),
+     datetime('now')
+   )
+ WHERE submitted_at = '1970-01-01 00:00:00';
 ALTER TABLE submissions ADD COLUMN trace_id TEXT;
 
 CREATE TABLE IF NOT EXISTS judge_jobs (
