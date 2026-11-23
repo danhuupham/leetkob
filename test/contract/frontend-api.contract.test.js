@@ -1,0 +1,155 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { startApp } from '../helpers.js';
+
+test('GET /api/me includes classDetails for authorized classes', async () => {
+  const app = await startApp();
+  try {
+    const ta = await app.as('ta_a').get('/api/me');
+    assert.equal(ta.status, 200);
+    assert.deepEqual(ta.body.classes, [1]);
+    assert.equal(ta.body.classDetails.length, 1);
+    assert.equal(ta.body.classDetails[0].id, 1);
+    assert.equal(ta.body.classDetails[0].code, 'CSC13114-01');
+
+    const admin = await app.as('admin').get('/api/me');
+    assert.equal(admin.status, 200);
+    assert.deepEqual(admin.body.classes, [1, 2]);
+    assert.equal(admin.body.classDetails.length, 2);
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/labs enforces class isolation and omits staff-only or hidden-test fields for students', async () => {
+  const app = await startApp();
+  try {
+    const unauth = await app.as(null).get('/api/labs');
+    assert.equal(unauth.status, 401);
+    assert.match(unauth.type, /application\/problem\+json/);
+
+    const taA = await app.as('ta_a').get('/api/labs');
+    assert.equal(taA.status, 200);
+    assert.deepEqual(
+      taA.body.labs.map((/** @type {{ id: number }} */ l) => l.id),
+      [1],
+    );
+    assert.equal(taA.body.labs[0].pendingReviews, 1);
+    assert.equal(typeof taA.body.labs[0].costSpentUsd, 'number');
+
+    const taB = await app.as('ta_b').get('/api/labs');
+    assert.equal(taB.status, 200);
+    assert.deepEqual(
+      taB.body.labs.map((/** @type {{ id: number }} */ l) => l.id),
+      [2, 3],
+    );
+
+    const stu1 = await app.as('stu1').get('/api/labs');
+    assert.equal(stu1.status, 200);
+    assert.deepEqual(
+      stu1.body.labs.map((/** @type {{ id: number }} */ l) => l.id),
+      [1],
+    );
+    assert.equal(Object.hasOwn(stu1.body.labs[0], 'pendingReviews'), false);
+    assert.equal(Object.hasOwn(stu1.body.labs[0], 'costSpentUsd'), false);
+    assert.equal(Object.hasOwn(stu1.body.labs[0], 'lab_tests'), false);
+    assert.ok(stu1.body.labs[0].latestSubmission);
+    assert.equal(Object.hasOwn(stu1.body.labs[0].latestSubmission, 'mark'), false);
+
+    const admin = await app.as('admin').get('/api/labs');
+    assert.equal(admin.status, 200);
+    assert.deepEqual(
+      admin.body.labs.map((/** @type {{ id: number }} */ l) => l.id),
+      [1, 2, 3],
+    );
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /api/labs/:labId/submissions isolates students and enforces FAQ-08 before and after publish', async () => {
+  const app = await startApp();
+  try {
+    const unauth = await app.as(null).get('/api/labs/3/submissions');
+    assert.equal(unauth.status, 401);
+
+    const crossStudent = await app.as('stu1').get('/api/labs/3/submissions');
+    assert.equal(crossStudent.status, 404);
+
+    const crossTa = await app.as('ta_a').get('/api/labs/3/submissions');
+    assert.equal(crossTa.status, 404);
+
+    app.db
+      .prepare(
+        `INSERT INTO lab_constraints (lab_id, constraint_code, rule_text, deduction)
+         VALUES (3, 'C1', 'Do not use std::sort', 3),
+                (3, 'C2', 'Use O(n log n) recursion', 4)`,
+      )
+      .run();
+
+    const stu3Sub = await app.as('stu3').post('/api/labs/3/submissions', {
+      code: 'int main() { return 0; }',
+    });
+    assert.equal(stu3Sub.status, 202);
+    const subId = stu3Sub.body.id;
+
+    app.db
+      .prepare(`UPDATE submissions SET judge_status = 'done', test_verdict = 'AC' WHERE id = ?`)
+      .run(subId);
+    app.db.prepare(`UPDATE judge_jobs SET status = 'done' WHERE submission_id = ?`).run(subId);
+    app.db
+      .prepare(
+        `INSERT INTO constraint_verdicts
+           (submission_id, constraint_code, verdict, source, evidence_json, ta_decision)
+         VALUES (?, 'C1', 'violation', 'hard_rule', '[{"line":1,"text":"int main() { return 0; }"}]', 'violation'),
+                (?, 'C2', 'unsure', 'model', '[]', 'pass')`,
+      )
+      .run(subId, subId);
+
+    const beforePublish = await app.as('stu3').get('/api/labs/3/submissions');
+    assert.equal(beforePublish.status, 200);
+    assert.equal(beforePublish.body.publishedAt, null);
+    assert.equal(beforePublish.body.submissions.length, 1);
+    const hiddenItem = beforePublish.body.submissions[0];
+    assert.equal(hiddenItem.id, subId);
+    assert.equal(hiddenItem.testVerdict, 'AC');
+    assert.equal(Object.hasOwn(hiddenItem, 'mark'), false);
+    assert.equal(Object.hasOwn(hiddenItem, 'deductions'), false);
+    assert.equal(Object.hasOwn(hiddenItem, 'constraintVerdicts'), false);
+
+    // Enrolling stu2 in class 2 must still keep stu3's submissions private from stu2.
+    app.db.prepare('INSERT INTO enrollments (class_id, user_id) VALUES (2, 5)').run();
+    const stu2OwnOnly = await app.as('stu2').get('/api/labs/3/submissions');
+    assert.equal(stu2OwnOnly.status, 200);
+    assert.equal(stu2OwnOnly.body.submissions.length, 0);
+
+    // Move deadline into past (with submission prior to deadline per FAQ-02) and publish lab 3.
+    app.db.prepare("UPDATE labs SET deadline_at = '2026-01-01 00:00:00' WHERE id = 3").run();
+    app.db
+      .prepare("UPDATE submissions SET submitted_at = '2025-12-31 23:59:59' WHERE id = ?")
+      .run(subId);
+    const pub = await app.as('ta_b').post('/api/labs/3/publish');
+    assert.equal(pub.status, 200);
+
+    const taSubs = await app.as('ta_b').get('/api/labs/3/submissions');
+    assert.equal(taSubs.status, 200);
+    assert.equal(taSubs.body.submissions[0].student, 'stu3');
+    assert.equal(taSubs.body.submissions[0].mark, 7);
+
+    const afterPublish = await app.as('stu3').get('/api/labs/3/submissions');
+    assert.equal(afterPublish.status, 200);
+    assert.ok(afterPublish.body.publishedAt);
+    const visibleItem = afterPublish.body.submissions[0];
+    assert.equal(visibleItem.mark, 7);
+    assert.equal(visibleItem.deductions.length, 1);
+    assert.equal(visibleItem.deductions[0].constraintCode, 'C1');
+    assert.equal(Object.hasOwn(visibleItem, 'constraintVerdicts'), false);
+
+    // Student lab summary reflects published mark too.
+    const stu3Labs = await app.as('stu3').get('/api/labs');
+    const lab3 = stu3Labs.body.labs.find((/** @type {{ id: number }} */ l) => l.id === 3);
+    assert.equal(lab3.latestSubmission.mark, 7);
+  } finally {
+    await app.close();
+  }
+});
