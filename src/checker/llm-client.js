@@ -159,7 +159,7 @@ function sleepWithSignal(ms, signal) {
  * }} params
  * @returns {Promise<{
  *   rawText: string,
- *   providerRequestId: string,
+ *   providerRequestId: string | null,
  *   model: string,
  *   inputTokens: number,
  *   outputTokens: number
@@ -335,10 +335,10 @@ export async function callGeminiModel({
     (Number.isFinite(thoughtsTokens) ? thoughtsTokens : 0);
   const headerReqId =
     typeof res.headers?.get === 'function' ? res.headers.get('x-goog-request-id') : null;
-  const providerRequestId =
-    headerReqId ||
-    (typeof parsedBody?.responseId === 'string' && parsedBody.responseId) ||
-    crypto.randomUUID();
+  const trimmedHeaderId = typeof headerReqId === 'string' ? headerReqId.trim() : '';
+  const trimmedBodyId =
+    typeof parsedBody?.responseId === 'string' ? parsedBody.responseId.trim() : '';
+  const providerRequestId = trimmedHeaderId || trimmedBodyId || null;
 
   return {
     rawText,

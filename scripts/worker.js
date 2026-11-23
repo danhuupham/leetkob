@@ -51,6 +51,11 @@ export function createWorkerConstraintChecker(db, options = {}) {
       },
       ...(options.llmTransport ? { llmTransport: options.llmTransport } : {}),
       callLogWriter: (entry) => {
+        if (entry.missingProviderRequestId) {
+          console.warn(
+            `[model_calls] Missing providerRequestId for submission ${submissionId} (lab ${labId}, model ${entry.model})`,
+          );
+        }
         db.exec('BEGIN IMMEDIATE');
         try {
           q.insertCall.run(
