@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../../src/config.js';
@@ -194,16 +195,34 @@ test('M9a: sandbox environment receives no MODEL_API_KEY, SESSION_SECRET, or .en
   }
 });
 
-test('M9b: compilation occurs inside sandbox so #include "/app/.env" fails with CE', async () => {
-  const res = await runInSandbox({
-    jobId: 'm9-include-env',
-    code: readAttack('m9_include_env.cpp'),
-    tests: [{ ordinal: 1, inputText: '', expectedOutput: 'PWNED' }],
-    sandboxConfig: DEFAULT_SANDBOX_CONFIG,
-  });
+test('M9b: compilation occurs inside sandbox so #include of a host-only sentinel fails with CE', async () => {
+  const sentinelDir = mkdtempSync(join(tmpdir(), 'leetkob-m9-sentinel-'));
+  const sentinelPath = join(sentinelDir, 'host_secret.h');
+  writeFileSync(
+    sentinelPath,
+    'static const char* LEAKED_SECRET = "HOST_SENTINEL_MODEL_API_KEY_LEAKED";\n',
+    'utf8',
+  );
+  assert.equal(existsSync(sentinelPath), true);
 
-  assert.equal(res.testVerdict, 'CE');
-  assert.equal(res.compileStderr.includes('MODEL_API_KEY'), false);
+  try {
+    const code = readAttack('m9_include_env.cpp').replace(
+      '__HOST_SENTINEL_PATH__',
+      sentinelPath.replace(/\\/g, '/'),
+    );
+    const res = await runInSandbox({
+      jobId: 'm9-include-env',
+      code,
+      tests: [{ ordinal: 1, inputText: '', expectedOutput: 'PWNED' }],
+      sandboxConfig: DEFAULT_SANDBOX_CONFIG,
+    });
+
+    assert.equal(res.testVerdict, 'CE');
+    assert.equal(res.compileStderr.includes('HOST_SENTINEL_MODEL_API_KEY_LEAKED'), false);
+    assert.equal(res.compileStderr.includes('MODEL_API_KEY'), false);
+  } finally {
+    rmSync(sentinelDir, { recursive: true, force: true });
+  }
 });
 
 test('M3 multi-test: per-phase watchdog kills fork-pipe attack on multi-test lab within 1 test wall limit', async () => {
