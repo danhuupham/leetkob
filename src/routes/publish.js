@@ -30,11 +30,22 @@ export function createPublishRoutes(db, auth) {
     activeJobs: db.prepare(
       `SELECT COUNT(*) AS count
        FROM submissions s
+       JOIN labs l ON l.id = s.lab_id
        LEFT JOIN judge_jobs j ON j.submission_id = s.id
        WHERE s.lab_id = ?
          AND (
-           s.judge_status != 'done'
-           OR j.status IN ('queued', 'running', 'failed')
+           (s.judge_status != 'done' AND COALESCE(j.status, 'queued') != 'failed')
+           OR j.status IN ('queued', 'running')
+           OR (
+             j.status = 'failed'
+             AND s.id = (
+               SELECT MAX(s2.id)
+               FROM submissions s2
+               WHERE s2.lab_id = s.lab_id
+                 AND s2.student_id = s.student_id
+                 AND s2.submitted_at <= l.deadline_at
+             )
+           )
          )`,
     ),
     pa3Pending: db.prepare(

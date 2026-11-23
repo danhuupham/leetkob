@@ -84,6 +84,18 @@ pre {
   font-size: 0.9rem;
 }
 
+.code-viewer-wrap {
+  margin: 0.35rem 0;
+}
+
+.code-viewer {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.85rem;
+  max-height: 18rem;
+  overflow-y: auto;
+  margin-top: 0.35rem;
+}
+
 li {
   margin: 0.5rem 0;
 }

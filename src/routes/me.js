@@ -6,6 +6,14 @@ import { send } from '../http.js';
  * @returns {import('../http.js').RouteEntry[]}
  */
 export function createMeRoutes(db, auth) {
+  const q = {
+    adminClasses: db.prepare('SELECT id FROM classes ORDER BY id'),
+    taClasses: db.prepare('SELECT class_id FROM class_staff WHERE user_id = ? ORDER BY class_id'),
+    studentClasses: db.prepare(
+      'SELECT class_id FROM enrollments WHERE user_id = ? ORDER BY class_id',
+    ),
+  };
+
   return [
     [
       'GET',
@@ -16,19 +24,10 @@ export function createMeRoutes(db, auth) {
 
         const classes =
           me.role === 'admin'
-            ? db
-                .prepare('SELECT id FROM classes ORDER BY id')
-                .all()
-                .map((r) => r.id)
+            ? q.adminClasses.all().map((r) => r.id)
             : me.role === 'ta'
-              ? db
-                  .prepare('SELECT class_id FROM class_staff WHERE user_id = ? ORDER BY class_id')
-                  .all(me.id)
-                  .map((r) => r.class_id)
-              : db
-                  .prepare('SELECT class_id FROM enrollments WHERE user_id = ? ORDER BY class_id')
-                  .all(me.id)
-                  .map((r) => r.class_id);
+              ? q.taClasses.all(me.id).map((r) => r.class_id)
+              : q.studentClasses.all(me.id).map((r) => r.class_id);
 
         return send(res, 200, {
           id: me.id,

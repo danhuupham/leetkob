@@ -9,6 +9,7 @@ services:
       PORT: 3007
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
       MODEL_API_KEY: ${MODEL_API_KEY:?MODEL_API_KEY is required}
+      MODEL_NAME: ${MODEL_NAME:-gemini-3-flash-preview}
       MODEL_OFF: ${MODEL_OFF:-0}
     volumes:
       - ${LEETKOB_DATA_DIR:-leetkob-data}:/data
@@ -26,11 +27,13 @@ services:
       timeout: 3s
       retries: 5
 
-  # Containerized worker works with MODEL_OFF=0/1 if Docker is reachable on host.
-  # For live VPS deployment with Docker sandbox judging (M8: no docker.sock inside containers),
-  # set LEETKOB_DATA_DIR=./data and run the worker directly on the host:
-  #   DATABASE_URL=./data/leetkob.sqlite npm run worker
+  # Default `docker compose up` starts only `app` (worker has profile `container-worker`
+  # because M8 forbids mounting docker.sock or Docker CLI inside judge/app containers).
+  # For live VPS deployment with Docker sandbox judging:
+  #   LEETKOB_DATA_DIR=./data SESSION_SECRET=<secret> MODEL_API_KEY=<key> docker compose up -d --build
+  #   DATABASE_URL=./data/leetkob.sqlite SANDBOX_IMAGE=leetkob-sandbox:latest MODEL_NAME=gemini-3-flash-preview MODEL_API_KEY=<key> npm run worker
   worker:
+    profiles: ['container-worker']
     build:
       context: .
       dockerfile: Dockerfile
@@ -40,6 +43,7 @@ services:
       DATABASE_URL: /data/leetkob.sqlite
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
       MODEL_API_KEY: ${MODEL_API_KEY:?MODEL_API_KEY is required}
+      MODEL_NAME: ${MODEL_NAME:-gemini-3-flash-preview}
       MODEL_OFF: ${MODEL_OFF:-0}
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-leetkob-sandbox:latest}
     volumes:

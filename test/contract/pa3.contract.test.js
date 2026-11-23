@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { open } from '../../src/db.js';
 import { createApp } from '../../src/app.js';
 import { processNextJob } from '../../src/worker.js';
+import { createWorkerConstraintChecker } from '../../scripts/worker.js';
 
 async function startPa3() {
   const db = open(':memory:', { migrateOnOpen: true, seed: true });
@@ -372,15 +373,23 @@ test('POST /api/verdicts/:verdictId/review validates evidence bounds, ownership,
     });
     assert.equal(outOfRange.status, 400);
 
-    // Valid line evidence succeeds and unblocks publish
+    // Reject fabricated evidence text that does not match the cited source line
+    const mismatchedEv = await app.as('tok-ta-a').post(`/api/verdicts/${verdictId}/review`, {
+      taDecision: 'violation',
+      evidence: [{ line: 3, text: 'std::sort(a, a + n);' }],
+    });
+    assert.equal(mismatchedEv.status, 400);
+
+    // Valid line evidence (normalized whitespace) succeeds, preserves source indentation, and unblocks publish
     const ok = await app.as('tok-ta-a').post(`/api/verdicts/${verdictId}/review`, {
       taDecision: 'violation',
-      evidence: [{ line: 3, text: '  return 0;' }],
+      evidence: [{ line: 3, text: 'return 0;' }],
     });
     assert.equal(ok.status, 200);
     assert.equal(ok.body.taDecision, 'violation');
+    assert.deepEqual(ok.body.evidence, [{ line: 3, text: '  return 0;' }]);
 
-    // Failed judge job still blocks publish until resolved
+    // Failed judge job on the latest counted submission blocks publish until resolved
     const failedSubId = Number(
       app.db
         .prepare(
@@ -396,12 +405,19 @@ test('POST /api/verdicts/:verdictId/review validates evidence bounds, ownership,
     const blockedByFailedJob = await app.as('tok-ta-a').post('/api/labs/1/publish', {});
     assert.equal(blockedByFailedJob.status, 409);
 
+    // Resubmitting a newer counted submission that finishes allows publish despite the superseded failed job
+    const newerSubId = Number(
+      app.db
+        .prepare(
+          `INSERT INTO submissions
+             (lab_id, student_id, verdict, decision, code, judge_status, test_verdict, submitted_at)
+           VALUES (1, 5, 'pass', NULL, 'int main(){ return 0; }', 'done', 'WA', '2026-10-31 23:20:00')`,
+        )
+        .run().lastInsertRowid,
+    );
     app.db
-      .prepare(`UPDATE submissions SET judge_status = 'done', test_verdict = 'WA' WHERE id = ?`)
-      .run(failedSubId);
-    app.db
-      .prepare(`UPDATE judge_jobs SET status = 'done' WHERE submission_id = ?`)
-      .run(failedSubId);
+      .prepare(`INSERT INTO judge_jobs (submission_id, status) VALUES (?, 'done')`)
+      .run(newerSubId);
 
     const published = await app.as('tok-ta-a').post('/api/labs/1/publish', {});
     assert.equal(published.status, 200);
@@ -471,5 +487,113 @@ test('GET /api/submissions/:id after publish handles FAQ-04 (non-AC = 0), FAQ-09
     assert.deepEqual(waRes.body.deductions, []);
   } finally {
     await app.close();
+  }
+});
+
+test('GET /api/submissions/:id exposes jobStatus on failed jobs and counted flag across resubmissions (FAQ-02)', async () => {
+  const app = await startPa3();
+  try {
+    const first = await app.as('tok-stu3').post('/api/labs/3/submissions', {
+      code: 'int main() { return 0; }',
+    });
+    assert.equal(first.status, 202);
+    const sub1Id = first.body.id;
+
+    app.db.prepare(`UPDATE judge_jobs SET status = 'failed' WHERE submission_id = ?`).run(sub1Id);
+
+    const second = await app.as('tok-stu3').post('/api/labs/3/submissions', {
+      code: 'int main() { return 1; }',
+    });
+    assert.equal(second.status, 202);
+    const sub2Id = second.body.id;
+
+    const res1 = await app.as('tok-stu3').get(`/api/submissions/${sub1Id}`);
+    assert.equal(res1.status, 200);
+    assert.equal(res1.body.jobStatus, 'failed');
+    assert.equal(res1.body.counted, false);
+
+    const res2 = await app.as('tok-stu3').get(`/api/submissions/${sub2Id}`);
+    assert.equal(res2.status, 200);
+    assert.equal(res2.body.jobStatus, 'queued');
+    assert.equal(res2.body.counted, true);
+  } finally {
+    await app.close();
+  }
+});
+
+test('createWorkerConstraintChecker persists model_calls, atomically updates labs.cost_spent_usd, and enforces cost-cap-exceeded', async () => {
+  const db = open(':memory:', { migrateOnOpen: true, seed: true });
+  try {
+    db.prepare(
+      `UPDATE labs SET statement = 'Implement merge sort', published_at = NULL WHERE id = 3`,
+    ).run();
+    const subId = Number(
+      db
+        .prepare(
+          `INSERT INTO submissions
+             (lab_id, student_id, verdict, decision, code, judge_status, test_verdict, submitted_at)
+           VALUES (3, 6, 'unsure', NULL, 'int main() {\n  return 0;\n}', 'running', 'PENDING', '2026-11-01 00:00:00')`,
+        )
+        .run().lastInsertRowid,
+    );
+
+    let calls = 0;
+    const checker = createWorkerConstraintChecker(db, {
+      modelOff: false,
+      modelConfig: {
+        modelName: 'gemini-3.8-flash',
+        modelApiKey: 'fake-key',
+        modelTimeoutMs: 5000,
+        modelMaxCostUsdPerLab: 0.001,
+      },
+      llmTransport: async () => {
+        calls += 1;
+        return {
+          rawText: JSON.stringify({
+            results: [{ constraint: 'C2', verdict: 'pass', evidence: [] }],
+          }),
+          providerRequestId: 'req-worker-1',
+          model: 'gemini-3.8-flash',
+          inputTokens: 1000,
+          outputTokens: 200,
+        };
+      },
+    });
+
+    const first = await checker({
+      jobId: 1,
+      submissionId: subId,
+      labId: 3,
+      code: 'int main() {\n  return 0;\n}',
+      constraints: [{ id: 'C2', text: 'Use recursive merge sort' }],
+    });
+    assert.equal(calls, 1);
+    assert.equal(first[0].verdict, 'pass');
+
+    const labAfterFirst = /** @type {{ cost_spent_usd: number }} */ (
+      db.prepare('SELECT cost_spent_usd FROM labs WHERE id = 3').get()
+    );
+    assert.ok(Math.abs(labAfterFirst.cost_spent_usd - 0.0015) < 1e-9);
+
+    const second = await checker({
+      jobId: 2,
+      submissionId: subId,
+      labId: 3,
+      code: 'int main() {\n  return 0;\n}',
+      constraints: [{ id: 'C2', text: 'Use recursive merge sort' }],
+    });
+    assert.equal(calls, 1);
+    assert.equal(second[0].verdict, 'unsure');
+    assert.equal(second[0].unsureReason, 'cost-cap-exceeded');
+
+    const modelCalls = /** @type {Array<{ status: string }>} */ (
+      db.prepare('SELECT status FROM model_calls WHERE lab_id = 3 ORDER BY id').all()
+    );
+    assert.deepEqual(
+      modelCalls.map((r) => r.status),
+      ['ok', 'cost_capped'],
+    );
+  } finally {
+    db.close();
   }
 });

@@ -92,6 +92,12 @@ function formatSubmissionOutput(sub) {
   const lines = [
     `Submission ${sub.id}: status=${sub.judgeStatus ?? sub.status}, testVerdict=${sub.testVerdict}`,
   ];
+  if (sub.counted === false) {
+    lines.push('(Not the latest counted submission for this lab)');
+  }
+  if (sub.jobStatus === 'failed') {
+    lines.push('Judge job failed after retries — please resubmit or contact your TA.');
+  }
   if (Array.isArray(sub.testResults) && sub.testResults.length > 0) {
     lines.push(`Tests: ${sub.testResults.map((t) => `#${t.ordinal}:${t.verdict}`).join(', ')}`);
   }
@@ -114,12 +120,14 @@ function formatSubmissionOutput(sub) {
 }
 
 async function refreshActiveSubmission() {
-  if (!activeSubmissionId) return;
+  const requestedId = activeSubmissionId;
+  if (!requestedId) return;
   try {
-    const sub = await api('GET', `/api/submissions/${activeSubmissionId}`);
+    const sub = await api('GET', `/api/submissions/${requestedId}`);
+    if (requestedId !== activeSubmissionId) return;
     submissionResult.textContent = formatSubmissionOutput(sub);
     const judgeStatus = sub.judgeStatus ?? sub.status;
-    if (judgeStatus !== 'done') {
+    if (judgeStatus !== 'done' && sub.jobStatus !== 'failed') {
       stopPolling();
       pollTimer = setTimeout(() => {
         void refreshActiveSubmission();
@@ -128,9 +136,138 @@ async function refreshActiveSubmission() {
       stopPolling();
     }
   } catch (error) {
+    if (requestedId !== activeSubmissionId) return;
     stopPolling();
     submissionResult.textContent = error.data?.detail || error.message;
   }
+}
+
+function formatNumberedCode(code) {
+  return String(code || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line, idx) => `${idx + 1}: ${line}`)
+    .join('\n');
+}
+
+function createCodeViewer(submissionId, submissionCache) {
+  const wrap = document.createElement('div');
+  wrap.className = 'code-viewer-wrap';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.textContent = 'View code';
+
+  const pre = document.createElement('pre');
+  pre.className = 'code-viewer';
+  pre.hidden = true;
+
+  toggleBtn.addEventListener('click', async () => {
+    if (!pre.hidden) {
+      pre.hidden = true;
+      toggleBtn.textContent = 'View code';
+      return;
+    }
+    toggleBtn.textContent = 'Hide code';
+    if (pre.dataset.loaded === '1') {
+      pre.hidden = false;
+      return;
+    }
+    pre.textContent = 'Loading...';
+    pre.hidden = false;
+    try {
+      let promise = submissionCache.get(submissionId);
+      if (!promise) {
+        promise = api('GET', `/api/submissions/${submissionId}`);
+        submissionCache.set(submissionId, promise);
+      }
+      const sub = await promise;
+      pre.textContent = formatNumberedCode(sub.code || '(empty)');
+      pre.dataset.loaded = '1';
+    } catch (error) {
+      submissionCache.delete(submissionId);
+      pre.textContent = error.data?.detail || error.message;
+    }
+  });
+
+  wrap.append(toggleBtn, pre);
+  return wrap;
+}
+
+function createVerdictReviewActions(verdictItem, published) {
+  if (published) return null;
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+
+  const passBtn = document.createElement('button');
+  passBtn.type = 'button';
+  passBtn.textContent = 'Mark Pass';
+  passBtn.addEventListener('click', async () => {
+    try {
+      await api('POST', `/api/verdicts/${verdictItem.verdictId}/review`, { taDecision: 'pass' });
+      status.textContent = `Reviewed verdict ${verdictItem.verdictId}: pass`;
+      await loadQueue();
+    } catch (error) {
+      status.textContent = error.data?.detail || error.message;
+    }
+  });
+  actions.append(passBtn);
+
+  if (Array.isArray(verdictItem.evidence) && verdictItem.evidence.length > 0) {
+    const violBtn = document.createElement('button');
+    violBtn.type = 'button';
+    violBtn.textContent = 'Confirm Violation';
+    violBtn.addEventListener('click', async () => {
+      try {
+        await api('POST', `/api/verdicts/${verdictItem.verdictId}/review`, {
+          taDecision: 'violation',
+          evidence: verdictItem.evidence,
+        });
+        status.textContent = `Reviewed verdict ${verdictItem.verdictId}: violation`;
+        await loadQueue();
+      } catch (error) {
+        status.textContent = error.data?.detail || error.message;
+      }
+    });
+    actions.append(violBtn);
+  } else {
+    const lineInput = document.createElement('input');
+    lineInput.type = 'number';
+    lineInput.min = '1';
+    lineInput.placeholder = 'Line #';
+    lineInput.className = 'line-input';
+
+    const textInput = document.createElement('input');
+    textInput.type = 'text';
+    textInput.placeholder = 'Evidence code line';
+
+    const violBtn = document.createElement('button');
+    violBtn.type = 'button';
+    violBtn.textContent = 'Confirm Violation';
+    violBtn.addEventListener('click', async () => {
+      const line = Number(lineInput.value);
+      const text = textInput.value.trim();
+      if (!Number.isInteger(line) || line < 1 || !text) {
+        status.textContent = 'Enter a valid source line number and code text';
+        return;
+      }
+      try {
+        await api('POST', `/api/verdicts/${verdictItem.verdictId}/review`, {
+          taDecision: 'violation',
+          evidence: [{ line, text }],
+        });
+        status.textContent = `Reviewed verdict ${verdictItem.verdictId}: violation`;
+        await loadQueue();
+      } catch (error) {
+        status.textContent = error.data?.detail || error.message;
+      }
+    });
+    actions.append(lineInput, textInput, violBtn);
+  }
+
+  return actions;
 }
 
 function renderEvidenceList(evidence) {
@@ -145,7 +282,7 @@ function renderEvidenceList(evidence) {
   return evList;
 }
 
-function renderSubmissionsOverview(submissions) {
+function renderSubmissionsOverview(submissions, published, submissionCache) {
   const overview = document.querySelector('#submissionsOverview');
   overview.replaceChildren();
   if (!Array.isArray(submissions) || submissions.length === 0) {
@@ -157,8 +294,9 @@ function renderSubmissionsOverview(submissions) {
   for (const sub of submissions) {
     const li = document.createElement('li');
     const header = document.createElement('div');
-    header.textContent = `Submission #${sub.id} (${sub.student}) — judge=${sub.judgeStatus}, tests=${sub.testVerdict}`;
-    li.append(header);
+    const jobLabel = sub.jobStatus === 'failed' ? ' (FAILED)' : '';
+    header.textContent = `Submission #${sub.id} (${sub.student}) — judge=${sub.judgeStatus}${jobLabel}, tests=${sub.testVerdict}`;
+    li.append(header, createCodeViewer(sub.id, submissionCache));
     if (Array.isArray(sub.verdicts) && sub.verdicts.length > 0) {
       const subList = document.createElement('ul');
       for (const v of sub.verdicts) {
@@ -167,6 +305,8 @@ function renderSubmissionsOverview(submissions) {
         vLi.textContent = `${v.constraintCode} (-${v.deduction} pts): ${v.verdict} [${v.source}${v.unsureReason ? `: ${v.unsureReason}` : ''}]${decisionText}`;
         const ev = renderEvidenceList(v.evidence);
         if (ev) vLi.append(ev);
+        const actions = createVerdictReviewActions(v, published);
+        if (actions) vLi.append(actions);
         subList.append(vLi);
       }
       li.append(subList);
@@ -178,6 +318,8 @@ function renderSubmissionsOverview(submissions) {
 async function loadQueue() {
   const labId = document.querySelector('#labId').value;
   const queue = await api('GET', `/api/labs/${labId}/queue`);
+  const published = Boolean(queue.publishedAt);
+  const submissionCache = new Map();
   const list = document.querySelector('#queue');
   list.replaceChildren();
   for (const item of queue.items) {
@@ -217,86 +359,20 @@ async function loadQueue() {
       const ev = renderEvidenceList(item.evidence);
       if (ev) li.append(ev);
 
-      if (!item.taDecision) {
-        const actions = document.createElement('div');
-        actions.className = 'actions';
-
-        const passBtn = document.createElement('button');
-        passBtn.type = 'button';
-        passBtn.textContent = 'Mark Pass';
-        passBtn.addEventListener('click', async () => {
-          try {
-            await api('POST', `/api/verdicts/${item.verdictId}/review`, { taDecision: 'pass' });
-            status.textContent = `Reviewed verdict ${item.verdictId}: pass`;
-            await loadQueue();
-          } catch (error) {
-            status.textContent = error.data?.detail || error.message;
-          }
-        });
-        actions.append(passBtn);
-
-        if (Array.isArray(item.evidence) && item.evidence.length > 0) {
-          const violBtn = document.createElement('button');
-          violBtn.type = 'button';
-          violBtn.textContent = 'Confirm Violation';
-          violBtn.addEventListener('click', async () => {
-            try {
-              await api('POST', `/api/verdicts/${item.verdictId}/review`, {
-                taDecision: 'violation',
-                evidence: item.evidence,
-              });
-              status.textContent = `Reviewed verdict ${item.verdictId}: violation`;
-              await loadQueue();
-            } catch (error) {
-              status.textContent = error.data?.detail || error.message;
-            }
-          });
-          actions.append(violBtn);
-        } else {
-          const lineInput = document.createElement('input');
-          lineInput.type = 'number';
-          lineInput.min = '1';
-          lineInput.placeholder = 'Line #';
-          lineInput.className = 'line-input';
-
-          const textInput = document.createElement('input');
-          textInput.type = 'text';
-          textInput.placeholder = 'Evidence code line';
-
-          const violBtn = document.createElement('button');
-          violBtn.type = 'button';
-          violBtn.textContent = 'Confirm Violation';
-          violBtn.addEventListener('click', async () => {
-            const line = Number(lineInput.value);
-            const text = textInput.value.trim();
-            if (!Number.isInteger(line) || line < 1 || !text) {
-              status.textContent = 'Enter a valid source line number and code text';
-              return;
-            }
-            try {
-              await api('POST', `/api/verdicts/${item.verdictId}/review`, {
-                taDecision: 'violation',
-                evidence: [{ line, text }],
-              });
-              status.textContent = `Reviewed verdict ${item.verdictId}: violation`;
-              await loadQueue();
-            } catch (error) {
-              status.textContent = error.data?.detail || error.message;
-            }
-          });
-          actions.append(lineInput, textInput, violBtn);
-        }
-
-        li.append(actions);
-      }
+      li.append(createCodeViewer(item.id, submissionCache));
+      const actions = createVerdictReviewActions(item, published);
+      if (actions) li.append(actions);
     }
     list.append(li);
   }
-  renderSubmissionsOverview(queue.submissions);
+  renderSubmissionsOverview(queue.submissions, published, submissionCache);
 }
 
 async function loadLab() {
   stopPolling();
+  activeSubmissionId = null;
+  refreshBtn.hidden = true;
+  submissionResult.textContent = '';
   labPanel.hidden = true;
   if (!me) return;
   const labId = document.querySelector('#labId').value;
@@ -355,6 +431,7 @@ document.querySelector('#publish').addEventListener('click', async () => {
   const labId = document.querySelector('#labId').value;
   try {
     const published = await api('POST', `/api/labs/${labId}/publish`);
+    await loadQueue();
     status.textContent = `Published at ${published.publishedAt}`;
   } catch (error) {
     status.textContent = error.data?.detail || error.message;

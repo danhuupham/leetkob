@@ -33,10 +33,17 @@ export function createSubmissionRoutes(db, auth) {
       WHERE id = ?
     `),
     findSubmission: db.prepare(`
-      SELECT s.id, s.lab_id, s.student_id, l.class_id, l.published_at
+      SELECT s.id, s.lab_id, s.student_id, l.class_id, l.deadline_at, l.published_at,
+             j.status AS job_status
       FROM submissions s
       JOIN labs l ON l.id = s.lab_id
+      LEFT JOIN judge_jobs j ON j.submission_id = s.id
       WHERE s.id = ?
+    `),
+    countedId: db.prepare(`
+      SELECT MAX(id) AS counted_id
+      FROM submissions
+      WHERE lab_id = ? AND student_id = ? AND submitted_at <= ?
     `),
     details: db.prepare(`
       SELECT code, judge_status, test_verdict, test_results_json,
@@ -68,7 +75,7 @@ export function createSubmissionRoutes(db, auth) {
         lab_id, student_id, verdict, decision, code,
         judge_status, test_verdict, submitted_at
       )
-      VALUES (?, ?, 'unsure', NULL, ?, 'queued', 'PENDING', datetime('now'))
+      VALUES (?, ?, 'unsure', NULL, ?, 'queued', 'PENDING', ?)
     `),
     insertJob: db.prepare(`
       INSERT INTO judge_jobs (submission_id, status)
@@ -91,7 +98,7 @@ export function createSubmissionRoutes(db, auth) {
         }
 
         const submission =
-          /** @type {{ id: number, lab_id: number, student_id: number, class_id: number, published_at: string | null } | undefined} */ (
+          /** @type {{ id: number, lab_id: number, student_id: number, class_id: number, deadline_at: string, published_at: string | null, job_status: string | null } | undefined} */ (
             q.findSubmission.get(submissionId)
           );
         if (!submission) {
@@ -115,6 +122,9 @@ export function createSubmissionRoutes(db, auth) {
           return problem(res, 404, 'not-found', 'No such submission');
         }
 
+        const countedRow = /** @type {{ counted_id: number | null } | undefined} */ (
+          q.countedId.get(submission.lab_id, studentId, submission.deadline_at)
+        );
         const testResults = safeJsonParse(details.test_results_json, /** @type {unknown[]} */ ([]));
 
         /** @type {Record<string, any>} */
@@ -123,6 +133,8 @@ export function createSubmissionRoutes(db, auth) {
           labId: Number(submission.lab_id),
           judgeStatus: details.judge_status,
           status: details.judge_status,
+          jobStatus: submission.job_status ?? null,
+          counted: Number(countedRow?.counted_id) === submissionId,
           testVerdict: details.test_verdict,
           testResults,
           submittedAt: details.submitted_at,
@@ -254,14 +266,19 @@ export function createSubmissionRoutes(db, auth) {
           return problem(res, 400, 'code-too-large', 'Code exceeds 65536 bytes');
         }
 
+        const submittedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
         const deadline = Date.parse(String(lab.deadline_at).replace(' ', 'T') + 'Z');
-        if (!Number.isFinite(deadline) || Date.now() > deadline || lab.published_at !== null) {
+        if (
+          !Number.isFinite(deadline) ||
+          submittedAt > String(lab.deadline_at) ||
+          lab.published_at !== null
+        ) {
           return problem(res, 409, 'deadline-passed', 'Submission deadline has passed');
         }
 
         db.exec('BEGIN IMMEDIATE');
         try {
-          const result = q.insertSubmission.run(labId, me.id, body.code);
+          const result = q.insertSubmission.run(labId, me.id, body.code, submittedAt);
           const submissionId = Number(result.lastInsertRowid);
           q.insertJob.run(submissionId);
           db.exec('COMMIT');

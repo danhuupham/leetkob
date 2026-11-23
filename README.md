@@ -69,10 +69,14 @@ Run Docker deployment assets with:
 ```bash
 docker build -t leetkob-app .
 docker build -t leetkob-sandbox -f Dockerfile.sandbox .
-SESSION_SECRET=<random-secret> MODEL_API_KEY=<gemini-key> docker compose up --build
+LEETKOB_DATA_DIR=./data SESSION_SECRET=<random-secret> MODEL_API_KEY=<gemini-key> docker compose up --build
 ```
 
-The app starts migrations automatically (`USER node`). SQLite is stored in `/data` (`leetkob-data` volume by default). The app and worker are separate services; Docker socket access is intentionally not mounted into containers (`M8`). For live Docker sandbox judging on a VPS, bind a shared data directory (`LEETKOB_DATA_DIR=./data`) for the `app` container and run `DATABASE_URL=./data/leetkob.sqlite npm run worker` on the host with Docker installed.
+The app starts migrations automatically (`USER node`). SQLite is stored in `/data` (`leetkob-data` volume by default). In `compose.yaml`, the containerized `worker` service uses `profiles: ['container-worker']` so `docker compose up --build` starts only `app` by default (preventing Docker-less worker failures and job contention; Docker socket access is never mounted into containers per `M8`). For live Docker sandbox judging on a VPS, bind `./data` (`LEETKOB_DATA_DIR=./data`) for `app` and run the worker directly on the host with Docker installed:
+
+```bash
+DATABASE_URL=./data/leetkob.sqlite SANDBOX_IMAGE=leetkob-sandbox:latest MODEL_NAME=gemini-3-flash-preview MODEL_API_KEY=<gemini-key> npm run worker
+```
 
 ---
 
@@ -87,8 +91,8 @@ Every check runs with one documented command locally and in GitHub Actions (`.gi
 | **Auto-format** | `npm run format` | `prettier --write .` (Prettier 3; excludes `leetkob-eval/` and `*.md`) |
 | **Format check** | `npm run format:check` | `prettier --check .` (Prettier 3) |
 | **Type check** | `npm run typecheck` | `tsc --noEmit` (TypeScript 7 with `checkJs: true`, `strict: true`) |
-| **Unit tests** | `npm test` | `node --test --test-reporter=spec "test/unit/**/*.test.js"` (25 unit tests) |
-| **Contract tests** | `npm run contract` | `node --test --test-reporter=spec "test/contract/**/*.test.js"` (49 contract tests) |
+| **Unit tests** | `npm test` | `node --test --test-reporter=spec "test/unit/**/*.test.js"` (26 unit tests) |
+| **Contract tests** | `npm run contract` | `node --test --test-reporter=spec "test/contract/**/*.test.js"` (52 contract tests) |
 | **Sandbox attack tests** | `npm run test:sandbox` | `node --test --test-reporter=spec "test/sandbox/**/*.test.js"` (14 Docker `M1`–`M9` tests) |
 | **Secret scan (tree + history)** | `npm run scan` | `node scripts/scan-secrets.js` (scans working tree & `git log -p --all`) |
 | **Eval dataset SHA-256 check** | `npm run verify:eval` | `node scripts/verify-eval.js` (verifies byte-for-byte SHA-256 of `leetkob-eval/`) |
@@ -146,19 +150,26 @@ In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2`–`PA#5` Rubri
 | [`docs/reference/`](docs/reference/FAQ.md) | LeeTKOB Class Brief (`BRIEF.md`), Milestones (`MILESTONES.md`), Product Owners' FAQ (`FAQ.md`), and `PA#3`–`PA#6` rubrics (`rubrics/`) |
 | [`docs/contract/publish.md`](docs/contract/publish.md) | Complete RFC 9457 API contract for `POST /api/labs/{labId}/publish` |
 | [`docs/security/threat-model.md`](docs/security/threat-model.md) | LeeTKOB threat model across roles, sandbox, secrets, supply chain, and prompt injection |
-| [`migrations/`](migrations/001_init.sql) | Sequential SQLite schema migrations applied via `npm run migrate` |
+| [`migrations/`](migrations/001_init.sql) | Sequential SQLite schema migrations (`001_init.sql`, `002_pa3_pipeline.sql`) applied via `npm run migrate` |
 | [`src/app.js`](src/app.js) | Thin HTTP composition root wiring modular routes, static assets, and `500 internal` safety net |
 | [`src/auth.js`](src/auth.js) | Shared Bearer token authentication, `class_staff` / `enrollments` ownership checks, and ID parsing |
-| [`src/routes/`](src/routes/publish.js) | Domain-scoped route handlers (`health.js`, `queue.js`, `publish.js`) for conflict-free team development |
+| [`src/routes/`](src/routes/publish.js) | Domain-scoped route handlers (`health.js`, `me.js`, `labs.js`, `submissions.js`, `queue.js`, `publish.js`) |
+| [`src/worker.js`](src/worker.js) | Durable SQLite judge queue worker (`claimNextJob`, lease heartbeat, `maxAttempts` fencing, `processNextJob`) |
+| [`src/sandbox/runner.js`](src/sandbox/runner.js) | Hardened `--network none` C++17 Docker sandbox runner enforcing `M1`–`M9` |
+| [`src/checker/`](src/checker/pipeline.js) | Comment/PII sanitizer (`sanitize.js`), C++17 AST hard rules (`hard-rules.js`), `G1`–`G5` guardrails (`guardrails.js`), Gemini client (`llm-client.js`), and orchestrator (`pipeline.js`) |
+| [`src/cli/check-dataset.js`](src/cli/check-dataset.js) | Standalone dataset checker CLI (`MODEL_OFF=1` offline support; never reads `labels.jsonl`) |
 | [`src/grades.js`](src/grades.js) | Pure grading logic (`markFor` with `FAQ-11` deduplication, `needsReview`) |
 | [`src/config.js`](src/config.js) | Startup config validation (`loadConfig`) and sandbox environment sanitizer (`getSandboxEnv`) |
 | [`src/db.js`](src/db.js) | SQLite connection factory supporting persistent `WAL` databases and `:memory:` test fixtures (`migrate`, `seedDemoData`) |
 | [`src/http.js`](src/http.js) | JSON / RFC 9457 `application/problem+json` helpers, route matcher (`matchRoute`), and safe static server (`serveStatic`) |
 | [`src/server.js`](src/server.js) | HTTP server entrypoint using `config.databaseUrl` and graceful `SIGINT`/`SIGTERM` shutdown |
 | [`public/`](public/index.html) | Browser UI (`index.html`, `styles.css`, `client.js`) |
-| [`scripts/`](scripts/scan-secrets.js) | Standalone CLI utilities (`migrate.js`, `seed.js`, `scan-secrets.js`, `verify-eval.js`) |
-| [`test/unit/grades.test.js`](test/unit/grades.test.js) | 8 unit tests for grading formulas, review queue filtering, and sandbox secret isolation |
-| [`test/contract/publish.contract.test.js`](test/contract/publish.contract.test.js) | 22 HTTP contract tests verifying every status, problem slug, ownership rule, deadline check, refusal invariant, and idempotency rule in `docs/contract/publish.md` |
+| [`scripts/`](scripts/scan-secrets.js) | Standalone CLI utilities (`migrate.js`, `seed.js`, `worker.js`, `scan-secrets.js`, `verify-eval.js`) |
+| [`Dockerfile`](Dockerfile) · [`Dockerfile.sandbox`](Dockerfile.sandbox) · [`Dockerfile.checker`](Dockerfile.checker) · [`compose.yaml`](compose.yaml) | Non-root container definitions and production Compose deployment (host-worker split for `M8`) |
+| [`eval/`](eval/runs/pa3-dev/report.txt) | Team custom cases (`eval/custom-cases/`) and committed `gemini-3-flash-preview` dev-set eval (`eval/runs/pa3-dev/`) |
+| [`test/unit/`](test/unit/grades.test.js) | 26 unit tests covering grading, hard rules, guardrails, key rotation/retry, and CLI checker |
+| [`test/contract/`](test/contract/publish.contract.test.js) | 52 HTTP & worker contract tests (`publish`, `flow`, `queue`, and `PA#3` review/visibility/cost-cap gates) |
+| [`test/sandbox/`](test/sandbox/attacks.test.js) | 14 Docker sandbox attack tests verifying minimums `M1`–`M9` |
 | [`e2e/publish.spec.js`](e2e/publish.spec.js) | Playwright end-to-end test: TA reviews pending violation and publishes grades |
 | [`scripts/scan-secrets.js`](scripts/scan-secrets.js) | Secret scanner over working tree and full git commit history |
 | [`AI-LOG.md`](AI-LOG.md) | Detailed log of AI assistant usage, changes, and rejections |

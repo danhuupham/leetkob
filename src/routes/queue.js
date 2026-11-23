@@ -60,10 +60,12 @@ export function createQueueRoutes(db, auth) {
        ORDER BY cv.id`,
     ),
     countedSubmissions: db.prepare(
-      `SELECT s.id, u.name AS student, s.judge_status, s.test_verdict, s.submitted_at
+      `SELECT s.id, u.name AS student, s.judge_status, j.status AS job_status,
+              s.test_verdict, s.submitted_at
        FROM submissions s
        JOIN users u ON u.id = s.student_id
        JOIN labs l ON l.id = s.lab_id
+       LEFT JOIN judge_jobs j ON j.submission_id = s.id
        WHERE s.lab_id = ?
          AND s.code != ''
          AND s.id = (
@@ -183,12 +185,13 @@ export function createQueueRoutes(db, auth) {
         }
 
         const submissions =
-          /** @type {Array<{ id: number, student: string, judge_status: string, test_verdict: string, submitted_at: string }>} */ (
+          /** @type {Array<{ id: number, student: string, judge_status: string, job_status: string | null, test_verdict: string, submitted_at: string }>} */ (
             q.countedSubmissions.all(lab.id)
           ).map((s) => ({
             id: s.id,
             student: s.student,
             judgeStatus: s.judge_status,
+            jobStatus: s.job_status ?? null,
             testVerdict: s.test_verdict,
             submittedAt: s.submitted_at,
             verdicts: verdictsBySub.get(s.id) ?? [],
@@ -271,6 +274,9 @@ export function createQueueRoutes(db, auth) {
           });
         }
 
+        /** @type {Array<{ line: number, text: string }>} */
+        let evidence = [];
+
         if (body.taDecision === 'violation') {
           if (
             !Array.isArray(body.evidence) ||
@@ -291,19 +297,27 @@ export function createQueueRoutes(db, auth) {
 
           const rawCode = String(verdict.code || '');
           if (rawCode.length > 0) {
-            const codeLines = rawCode.split('\n');
-            const outOfRangeOrBlank = body.evidence.some(
-              (e) => e.line > codeLines.length || codeLines[e.line - 1].trim().length === 0,
-            );
-            if (outOfRangeOrBlank) {
+            const codeLines = rawCode.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+            const invalidLineOrText = body.evidence.some((e) => {
+              if (e.line > codeLines.length) return true;
+              const actual = codeLines[e.line - 1];
+              if (actual.trim().length === 0) return true;
+              const normActual = actual.trim().replace(/\s+/g, ' ');
+              const normProvided = e.text.trim().replace(/\s+/g, ' ');
+              return normProvided !== normActual;
+            });
+            if (invalidLineOrText) {
               return problem(res, 400, 'validation', 'Invalid evidence', {
-                detail: 'Evidence line must reference a non-empty line in the submission source',
+                detail:
+                  'Evidence line and code text must match a non-empty line in the submission source',
               });
             }
+            evidence = body.evidence.map((e) => ({ line: e.line, text: codeLines[e.line - 1] }));
+          } else {
+            evidence = body.evidence.map((e) => ({ line: e.line, text: e.text.trim() }));
           }
         }
 
-        const evidence = body.taDecision === 'violation' ? body.evidence : [];
         q.verdictReview.run(body.taDecision, me.id, JSON.stringify(evidence), verdict.id);
         return send(res, 200, {
           id: verdict.id,
