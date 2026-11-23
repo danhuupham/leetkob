@@ -2,6 +2,14 @@
 // Modularized so each guardrail can be tested and extended independently across PA#3 and PA#4.
 
 const VALID_VERDICTS = new Set(['pass', 'violation', 'unsure']);
+const ALLOWED_RESULT_KEYS = new Set([
+  'constraintCode',
+  'verdict',
+  'source',
+  'unsureReason',
+  'evidence',
+  'rationale',
+]);
 
 /**
  * @typedef {'model-unsure' | 'schema-invalid' | 'evidence-mismatch' | 'model-timeout' | 'cost-cap-exceeded' | 'model-off'} UnsureReason
@@ -45,13 +53,11 @@ function normalizeCodeLine(line) {
 export function stripModelDeductions(rawFields, baseResult) {
   /** @type {Record<string, unknown>} */
   const merged = { ...rawFields, ...baseResult };
-  delete merged.constraint;
-  delete merged.deduction;
-  delete merged.points;
-  delete merged.mark;
-  delete merged.score;
-  delete merged.grade;
-  delete merged.instructions;
+  for (const key of Object.keys(merged)) {
+    if (!ALLOWED_RESULT_KEYS.has(key)) {
+      delete merged[key];
+    }
+  }
   return /** @type {CheckedConstraintResult} */ (merged);
 }
 
@@ -84,12 +90,7 @@ export function parseAndValidateModelResponse(rawText, expectedConstraintIds) {
 
   if (typeof rawText !== 'string') return failAll();
   const trimmed = rawText.trim();
-  if (
-    trimmed.length === 0 ||
-    trimmed.includes('```') ||
-    !trimmed.startsWith('{') ||
-    !trimmed.endsWith('}')
-  ) {
+  if (trimmed.length === 0 || !trimmed.startsWith('{') || !trimmed.endsWith('}')) {
     return failAll();
   }
 
