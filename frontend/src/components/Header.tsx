@@ -59,6 +59,7 @@ export function Header({
                 <option value="ta_b">ta_b</option>
                 <option value="stu1">stu1</option>
                 <option value="stu2">stu2</option>
+                <option value="stu4">stu4</option>
                 <option value="stu3">stu3</option>
                 <option value="admin">admin</option>
               </select>

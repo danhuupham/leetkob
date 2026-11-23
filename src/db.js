@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', import.meta.url));
 
 // Default reference accounts for local development and automated tests:
-//   class 1  TA: ta_a  students: stu1, stu2
+//   class 1  TA: ta_a  students: stu1, stu2, stu4
 //     lab 1 (deadline passed): submission 1 violation (unreviewed), submission 2 pass
 //   class 2  TA: ta_b  students: stu3
 //     lab 2 (deadline passed): submission 3 violation (confirmed)
@@ -19,6 +19,7 @@ export const USERS = [
   { id: 4, name: 'stu1', role: 'student', token: 'tok-stu1' },
   { id: 5, name: 'stu2', role: 'student', token: 'tok-stu2' },
   { id: 6, name: 'stu3', role: 'student', token: 'tok-stu3' },
+  { id: 7, name: 'stu4', role: 'student', token: 'tok-stu4' },
 ];
 
 /**
@@ -75,7 +76,7 @@ export function seedDemoData(db) {
 
   db.exec(`
     INSERT OR IGNORE INTO class_staff VALUES (1, 2), (2, 3);
-    INSERT OR IGNORE INTO enrollments VALUES (1, 4), (1, 5), (2, 6);
+    INSERT OR IGNORE INTO enrollments VALUES (1, 4), (1, 5), (2, 6), (1, 7);
     INSERT OR IGNORE INTO labs (id, class_id, title, deadline_at) VALUES
       (1, 1, 'Merge sort', '2026-11-01 00:00:00'),
       (2, 2, 'Merge sort', '2026-11-01 00:00:00'),

@@ -5,6 +5,7 @@ export const DEMO_TOKENS: Record<string, string> = {
   ta_b: 'tok-ta-b',
   stu1: 'tok-stu1',
   stu2: 'tok-stu2',
+  stu4: 'tok-stu4',
   stu3: 'tok-stu3',
   admin: 'tok-admin',
 };
@@ -38,6 +39,13 @@ export const DEMO_ACCOUNTS: DemoAccountCard[] = [
     roleLabel: 'Student',
     classLabel: 'Class 1 · CSC13114-01',
     summary: 'Second student in Class 1 for multi-student queue & FAQ-02 testing.',
+  },
+  {
+    username: 'stu4',
+    token: 'tok-stu4',
+    roleLabel: 'Student',
+    classLabel: 'Class 1 · CSC13114-01',
+    summary: 'Third student in Class 1 so 3-solution walk-throughs appear simultaneously.',
   },
   {
     username: 'ta_b',

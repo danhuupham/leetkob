@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { isBanListRuleText } from '../api';
-import type { EvidenceLine, LabDetail, QueueItem, QueueResponse } from '../types';
+import type {
+  CountedSubmission,
+  EvidenceLine,
+  LabDetail,
+  QueueItem,
+  QueueResponse,
+} from '../types';
 import { CodeViewer } from './CodeViewer';
 import { VerdictCard } from './VerdictCard';
 
@@ -34,9 +40,88 @@ export function TaWorkspace({
   const published = Boolean(queue?.publishedAt || lab.publishedAt);
   const items = queue?.items ?? [];
   const countedSubmissions = queue?.submissions ?? [];
+  const supersededSubmissions = queue?.supersededSubmissions ?? [];
   const pendingCount = items.filter((item) =>
     item.verdictId ? !item.taDecision : !item.decision,
   ).length;
+
+  function renderSubmissionCard(sub: CountedSubmission, readOnly: boolean) {
+    const needsLinePick =
+      !readOnly && !published && sub.verdicts.some((v) => !v.evidence || v.evidence.length === 0);
+    return (
+      <div key={sub.id} className="verdict-card">
+        <div className="verdict-head">
+          <div className="toolbar-row">
+            <strong>
+              Submission #{sub.id} · {sub.student}
+            </strong>
+            <span
+              className={
+                sub.testVerdict === 'AC'
+                  ? 'pill pill-success'
+                  : sub.testVerdict === 'PENDING'
+                    ? 'pill pill-accent'
+                    : 'pill pill-danger'
+              }
+            >
+              {sub.testVerdict}
+            </span>
+            <span className="pill">
+              judge={sub.judgeStatus}
+              {sub.jobStatus === 'failed' ? ' (FAILED)' : ''}
+            </span>
+            {readOnly && <span className="pill pill-warn">Superseded (FAQ-02)</span>}
+          </div>
+          <span className="muted">{sub.submittedAt} UTC</span>
+        </div>
+
+        <CodeViewer
+          token={token}
+          submissionId={sub.id}
+          highlightLines={sub.verdicts.flatMap((v) => v.evidence)}
+          onSelectLine={
+            needsLinePick
+              ? (line, text) =>
+                  setSelectedLineBySub((prev) => ({
+                    ...prev,
+                    [sub.id]: { line, text },
+                  }))
+              : undefined
+          }
+        />
+
+        {sub.verdicts.length > 0 && (
+          <div className="builder-list">
+            {sub.verdicts.map((v) => (
+              <VerdictCard
+                key={v.verdictId}
+                token={token}
+                published={readOnly || published}
+                showStudentCodeViewer={false}
+                externalLineSelection={readOnly ? null : (selectedLineBySub[sub.id] ?? null)}
+                item={{
+                  verdictId: v.verdictId,
+                  submissionId: sub.id,
+                  student: sub.student,
+                  constraintCode: v.constraintCode,
+                  ruleText: v.ruleText,
+                  deduction: v.deduction,
+                  verdict: v.verdict,
+                  source: v.source,
+                  unsureReason: v.unsureReason,
+                  evidence: v.evidence,
+                  rationale: v.rationale,
+                  taDecision: v.taDecision,
+                }}
+                onReviewDecision={onReviewVerdict}
+                onError={onError}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div id="taPanel" className="builder-list">
@@ -190,82 +275,14 @@ export function TaWorkspace({
             {countedSubmissions.length === 0 ? (
               <p className="muted">No counted C++ submissions before deadline yet.</p>
             ) : (
-              countedSubmissions.map((sub) => {
-                const needsLinePick =
-                  !published && sub.verdicts.some((v) => !v.evidence || v.evidence.length === 0);
-                return (
-                  <div key={sub.id} className="verdict-card">
-                    <div className="verdict-head">
-                      <div className="toolbar-row">
-                        <strong>
-                          Submission #{sub.id} · {sub.student}
-                        </strong>
-                        <span
-                          className={
-                            sub.testVerdict === 'AC'
-                              ? 'pill pill-success'
-                              : sub.testVerdict === 'PENDING'
-                                ? 'pill pill-accent'
-                                : 'pill pill-danger'
-                          }
-                        >
-                          {sub.testVerdict}
-                        </span>
-                        <span className="pill">
-                          judge={sub.judgeStatus}
-                          {sub.jobStatus === 'failed' ? ' (FAILED)' : ''}
-                        </span>
-                      </div>
-                      <span className="muted">{sub.submittedAt} UTC</span>
-                    </div>
+              countedSubmissions.map((sub) => renderSubmissionCard(sub, false))
+            )}
 
-                    <CodeViewer
-                      token={token}
-                      submissionId={sub.id}
-                      highlightLines={sub.verdicts.flatMap((v) => v.evidence)}
-                      onSelectLine={
-                        needsLinePick
-                          ? (line, text) =>
-                              setSelectedLineBySub((prev) => ({
-                                ...prev,
-                                [sub.id]: { line, text },
-                              }))
-                          : undefined
-                      }
-                    />
-
-                    {sub.verdicts.length > 0 && (
-                      <div className="builder-list">
-                        {sub.verdicts.map((v) => (
-                          <VerdictCard
-                            key={v.verdictId}
-                            token={token}
-                            published={published}
-                            showStudentCodeViewer={false}
-                            externalLineSelection={selectedLineBySub[sub.id] ?? null}
-                            item={{
-                              verdictId: v.verdictId,
-                              submissionId: sub.id,
-                              student: sub.student,
-                              constraintCode: v.constraintCode,
-                              ruleText: v.ruleText,
-                              deduction: v.deduction,
-                              verdict: v.verdict,
-                              source: v.source,
-                              unsureReason: v.unsureReason,
-                              evidence: v.evidence,
-                              rationale: v.rationale,
-                              taDecision: v.taDecision,
-                            }}
-                            onReviewDecision={onReviewVerdict}
-                            onError={onError}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
+            {supersededSubmissions.length > 0 && (
+              <>
+                <h3 className="section-heading">Superseded Submissions (FAQ-02 — Not Counted)</h3>
+                {supersededSubmissions.map((sub) => renderSubmissionCard(sub, true))}
+              </>
             )}
           </div>
         )}

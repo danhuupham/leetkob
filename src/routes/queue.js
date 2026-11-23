@@ -17,6 +17,43 @@ function parseEvidenceJson(raw) {
 }
 
 /**
+ * Groups constraint verdict rows by submission ID and attaches them to submission rows.
+ *
+ * @param {Array<{ id: number, student: string, judge_status: string, job_status: string | null, test_verdict: string, submitted_at: string }>} subRows
+ * @param {Array<{ id: number, submission_id: number, constraint_code: string, rule_text: string, deduction: number, verdict: string, source: string, unsure_reason: string | null, evidence_json: string, model_rationale: string | null, ta_decision: string | null }>} verdictRows
+ */
+function buildSubmissionsWithVerdicts(subRows, verdictRows) {
+  /** @type {Map<number, Array<Record<string, unknown>>>} */
+  const verdictsBySub = new Map();
+  for (const v of verdictRows) {
+    const list = verdictsBySub.get(v.submission_id) ?? [];
+    list.push({
+      verdictId: v.id,
+      constraintCode: v.constraint_code,
+      ruleText: v.rule_text,
+      deduction: v.deduction,
+      verdict: v.verdict,
+      source: v.source,
+      unsureReason: v.unsure_reason,
+      evidence: parseEvidenceJson(v.evidence_json),
+      rationale: v.model_rationale,
+      taDecision: v.ta_decision,
+    });
+    verdictsBySub.set(v.submission_id, list);
+  }
+
+  return subRows.map((s) => ({
+    id: s.id,
+    student: s.student,
+    judgeStatus: s.judge_status,
+    jobStatus: s.job_status ?? null,
+    testVerdict: s.test_verdict,
+    submittedAt: s.submitted_at,
+    verdicts: verdictsBySub.get(s.id) ?? [],
+  }));
+}
+
+/**
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {ReturnType<typeof import('../auth.js').createAuth>} auth
  * @returns {import('../http.js').RouteEntry[]}
@@ -96,6 +133,46 @@ export function createQueueRoutes(db, auth) {
          )
        ORDER BY cv.submission_id, cv.id`,
     ),
+    supersededSubmissions: db.prepare(
+      `SELECT s.id, u.name AS student, s.judge_status, j.status AS job_status,
+              s.test_verdict, s.submitted_at
+       FROM submissions s
+       JOIN users u ON u.id = s.student_id
+       JOIN labs l ON l.id = s.lab_id
+       LEFT JOIN judge_jobs j ON j.submission_id = s.id
+       WHERE s.lab_id = ?
+         AND s.code != ''
+         AND s.submitted_at <= l.deadline_at
+         AND s.id < (
+           SELECT MAX(s2.id)
+           FROM submissions s2
+           WHERE s2.lab_id = s.lab_id
+             AND s2.student_id = s.student_id
+             AND s2.submitted_at <= l.deadline_at
+         )
+       ORDER BY s.id`,
+    ),
+    supersededVerdicts: db.prepare(
+      `SELECT cv.id, cv.submission_id, cv.constraint_code, lc.rule_text, lc.deduction,
+              cv.verdict, cv.source, cv.unsure_reason, cv.evidence_json,
+              cv.model_rationale, cv.ta_decision
+       FROM constraint_verdicts cv
+       JOIN submissions s ON s.id = cv.submission_id
+       JOIN labs l ON l.id = s.lab_id
+       JOIN lab_constraints lc
+         ON lc.lab_id = s.lab_id AND lc.constraint_code = cv.constraint_code
+       WHERE s.lab_id = ?
+         AND s.code != ''
+         AND s.submitted_at <= l.deadline_at
+         AND s.id < (
+           SELECT MAX(s2.id)
+           FROM submissions s2
+           WHERE s2.lab_id = s.lab_id
+             AND s2.student_id = s.student_id
+             AND s2.submitted_at <= l.deadline_at
+         )
+       ORDER BY cv.submission_id, cv.id`,
+    ),
     verdict: db.prepare(
       `SELECT cv.id, cv.submission_id, s.code, l.class_id, l.published_at
        FROM constraint_verdicts cv
@@ -163,39 +240,23 @@ export function createQueueRoutes(db, auth) {
             decision: v.ta_decision,
           }));
 
-        /** @type {Map<number, Array<Record<string, unknown>>>} */
-        const verdictsBySub = new Map();
-        for (const v of /** @type {Array<{ id: number, submission_id: number, constraint_code: string, rule_text: string, deduction: number, verdict: string, source: string, unsure_reason: string | null, evidence_json: string, model_rationale: string | null, ta_decision: string | null }>} */ (
-          q.countedVerdicts.all(lab.id)
-        )) {
-          const list = verdictsBySub.get(v.submission_id) ?? [];
-          list.push({
-            verdictId: v.id,
-            constraintCode: v.constraint_code,
-            ruleText: v.rule_text,
-            deduction: v.deduction,
-            verdict: v.verdict,
-            source: v.source,
-            unsureReason: v.unsure_reason,
-            evidence: parseEvidenceJson(v.evidence_json),
-            rationale: v.model_rationale,
-            taDecision: v.ta_decision,
-          });
-          verdictsBySub.set(v.submission_id, list);
-        }
-
-        const submissions =
+        const submissions = buildSubmissionsWithVerdicts(
           /** @type {Array<{ id: number, student: string, judge_status: string, job_status: string | null, test_verdict: string, submitted_at: string }>} */ (
             q.countedSubmissions.all(lab.id)
-          ).map((s) => ({
-            id: s.id,
-            student: s.student,
-            judgeStatus: s.judge_status,
-            jobStatus: s.job_status ?? null,
-            testVerdict: s.test_verdict,
-            submittedAt: s.submitted_at,
-            verdicts: verdictsBySub.get(s.id) ?? [],
-          }));
+          ),
+          /** @type {Array<{ id: number, submission_id: number, constraint_code: string, rule_text: string, deduction: number, verdict: string, source: string, unsure_reason: string | null, evidence_json: string, model_rationale: string | null, ta_decision: string | null }>} */ (
+            q.countedVerdicts.all(lab.id)
+          ),
+        );
+
+        const supersededSubmissions = buildSubmissionsWithVerdicts(
+          /** @type {Array<{ id: number, student: string, judge_status: string, job_status: string | null, test_verdict: string, submitted_at: string }>} */ (
+            q.supersededSubmissions.all(lab.id)
+          ),
+          /** @type {Array<{ id: number, submission_id: number, constraint_code: string, rule_text: string, deduction: number, verdict: string, source: string, unsure_reason: string | null, evidence_json: string, model_rationale: string | null, ta_decision: string | null }>} */ (
+            q.supersededVerdicts.all(lab.id)
+          ),
+        );
 
         return send(res, 200, {
           lab: lab.id,
@@ -203,6 +264,7 @@ export function createQueueRoutes(db, auth) {
           costSpentUsd: lab.cost_spent_usd,
           items: [...legacyItems, ...pa3Items],
           submissions,
+          supersededSubmissions,
         });
       },
     ],
