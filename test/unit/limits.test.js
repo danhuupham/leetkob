@@ -315,3 +315,44 @@ test('AC4: strips comments/PII, bypasses LLM for hard-rule constraints, honors M
   assert.equal(geminiRes.inputTokens, 400);
   assert.equal(geminiRes.outputTokens, 100);
 });
+
+test('G5 strips arbitrary injected keys via allowlist and G1 permits backticks inside valid JSON', async () => {
+  const codeWithBackticks = [
+    '#include <iostream>',
+    'int main() {',
+    '  const char* s = "```";',
+    '  return 0;',
+    '}',
+  ].join('\n');
+
+  const rawText = JSON.stringify({
+    results: [
+      {
+        constraint: 'C2',
+        verdict: 'violation',
+        penalty: 5,
+        finalMark: 0,
+        ta_decision: 'violation',
+        override: true,
+        evidence: [{ line: 3, text: 'const char* s = "```";' }],
+        rationale: 'Contains ``` backtick marker in string literal.',
+      },
+    ],
+  });
+
+  const res = await checkSubmissionConstraints({
+    statement: SAMPLE_STATEMENT,
+    constraints: [SAMPLE_CONSTRAINTS[1]],
+    code: codeWithBackticks,
+    llmTransport: async () => ({ rawText, providerRequestId: 'req-backticks' }),
+  });
+
+  assert.equal(res.length, 1);
+  assert.equal(res[0].verdict, 'violation');
+  assert.equal(res[0].unsureReason, null);
+  assert.equal('penalty' in res[0], false);
+  assert.equal('finalMark' in res[0], false);
+  assert.equal('ta_decision' in res[0], false);
+  assert.equal('override' in res[0], false);
+  assert.deepEqual(res[0].evidence, [{ line: 3, text: '  const char* s = "```";' }]);
+});
