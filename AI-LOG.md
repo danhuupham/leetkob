@@ -119,6 +119,23 @@ By hand: Verified `git diff ecc4a32..1a8de33 -- test/` is empty (0 bytes loosene
 
 ---
 
+## Entry 8 · 2026-11-18 — Task `T3.4`: Guardrails (`G1`, `G2`, `G3`, `G5`), Gemini 3.8 Flash client & checker pipeline (`4a5fcf0`, `0a02dac`, `ef79bf9`)
+Tool: Antigravity (Gemini)
+Asked for: Implement `PA#3` Task `T3.4` test-first on branch `feat/pa3-model-and-limits`: offline fake-model tests in `test/unit/limits.test.js` (`AC1`–`AC4`), guardrails in `src/checker/guardrails.js`, Gemini HTTP client in `src/checker/llm-client.js`, and orchestration pipeline in `src/checker/pipeline.js`.
+Kept:
+- `test/unit/limits.test.js` committed first (`4a5fcf0`), testing schema validation `G1` (`AC1`), wall-clock timeout `G3` (`AC2`), exact source-line evidence mapping `G2` & deduction stripping `G5` (`AC3`), and comment/PII stripping, hard-rule LLM bypass, `MODEL_OFF=1`, and `x-goog-api-key` header isolation (`AC4`).
+- `src/checker/guardrails.js` (`0a02dac`) implementing `parseAndValidateModelResponse` (`G1`), `validateAndMapEvidence` (`G2`), `withModelTimeout` / `isTimeoutError` (`G3`), and `stripModelDeductions` (`G5`).
+- `src/checker/llm-client.js` & `src/checker/pipeline.js` (`ef79bf9`) invoking `gemini-3.8-flash` (`$0.75/1M` input, `$3.75/1M` output), passing `MODEL_API_KEY` exclusively via the `x-goog-api-key` request header, and recording structured call logs (`providerRequestId`, `model`, `inputTokens`, `outputTokens`, `latencyMs`, `costUsd`, `sanitizedPrompt`).
+Changed:
+- During mutation review of `src/checker/guardrails.js`, we noticed the assistant's initial `parseAndValidateModelResponse` constructed `{ verdict, unsureReason, rawEvidence, rationale }` by cherry-picking properties, which meant commenting out `stripModelDeductions` (`G5`) would still pass `AC3` (`'deduction' in validRes[0] === false`) and violate the `PA#4` Criterion 3 mutation-testing rule. We updated `ParsedConstraintEntry` to retain `rawFields` and routed the final result through `stripModelDeductions(entry.rawFields, baseResult)` so deleting `G5` immediately leaks `deduction` and fails `AC3`.
+- Added `FetchLike` JSDoc typing in `src/checker/llm-client.js` and `collectOrderedResults` in `src/checker/pipeline.js` to satisfy `tsc --noEmit` (`strict: true`) without modifying a single byte of `test/unit/limits.test.js` after `4a5fcf0`.
+Rejected:
+- **Rejected passing `MODEL_API_KEY` in the URL query string (`?key=...`):** Standard Gemini REST quickstarts pass `?key=${apiKey}` in the URL, which leaks the secret into HTTP error objects, proxy logs, and stack traces. Enforced `'x-goog-api-key'` request headers exclusively and added an explicit assertion in `AC4` (`assert.equal(seenUrl.includes('key='), false)`).
+- **Rejected trusting `fetch` `AbortSignal` alone for `G3` timeout:** A custom or misbehaving transport that ignores `signal` would hang forever if awaited directly; wrapped transport execution in `Promise.race` inside `withModelTimeout()` so the wall-clock timer always rejects after `modelTimeoutMs`.
+By hand: Verified `git diff 4a5fcf0..ef79bf9 -- test/` is empty (0 bytes modified in tests after the test commit), ran `npm run check` (20/20 unit, 22/22 contract) and `npm run e2e`, and verified zero dev-set IDs in `src/`.
+
+---
+
 ## Entry 9 · 2026-11-20 — Task `T3.2`: Hardened Docker C++17 Sandbox & `M1`–`M9` Attack Suite (`15b23b6`, `57249b3`, `9c32b46`)
 Tool: Antigravity
 Asked for: Implement `PA#3` Task `T3.2` test-first on branch `feat/pa3-sandbox`: 10 C++ attack fixtures (`test/fixtures/attacks/m1_network.cpp`–`m9_include_env.cpp`) and `test/sandbox/attacks.test.js` first, followed by `Dockerfile.sandbox`, `src/sandbox/runner.js` (`runInSandbox`), `"test:sandbox"`, and the `sandbox` CI job.
