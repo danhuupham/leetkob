@@ -6,7 +6,7 @@
 - `21120595` — Nguyễn Thành Vinh
 - `23120256` — Trần Đại Hiệp
 
-> **Pending Live Deployment & Recording:** Populate `<TODO_DEPLOY_URL>` and `<TODO_RECORDING_URL>` below after running the VPS deployment walk-through and capturing the `<= 5 min` backup recording, then merge to `main` and push tag `pa3`.
+> **Pending Screen Recording:** Live deployment is verified at [`https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com`](https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com). Populate `<TODO_RECORDING_URL>` below after recording the `<= 5 min` Criterion 1 walk-through, then merge to `main` and push tag `pa3`.
 
 ---
 
@@ -15,7 +15,7 @@
 | Deliverable | Link / Evidence |
 |---|---|
 | **1. Public Repository** | [`https://github.com/danhuupham/leetkob`](https://github.com/danhuupham/leetkob) |
-| **2. Live Deployment URL** | `<TODO_DEPLOY_URL>` |
+| **2. Live Deployment URL** | [`https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com`](https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com) *(Azure `malaysiawest`, `Standard_B2als_v2`, HTTPS via Caddy + separate `leetkob-worker` systemd host process)* |
 | **3. Screen Recording (`<= 5 min`, Criterion 1 flow)** | `<TODO_RECORDING_URL>` |
 | **4. Tag `pa3` & CI Run (with `gates`, `e2e`, `sandbox`)** | **Tag `pa3`:** [`https://github.com/danhuupham/leetkob/tree/pa3`](https://github.com/danhuupham/leetkob/tree/pa3) *(to be pushed after merging `PA3.md`)* · **Tag CI Runs:** [`https://github.com/danhuupham/leetkob/actions?query=branch%3Apa3`](https://github.com/danhuupham/leetkob/actions?query=branch%3Apa3) · **Latest `main` CI Run:** [`45106084561`](https://github.com/danhuupham/leetkob/actions/runs/45106084561) (`gates`, `e2e`, `sandbox` all green) · **Sandbox PR #15 CI Run:** [`45101429261`](https://github.com/danhuupham/leetkob/actions/runs/45101429261) |
 | **5. Checker Command, Docker Build & `MODEL_OFF=1`** | [`src/cli/check-dataset.js`](src/cli/check-dataset.js) · [`Dockerfile.checker`](Dockerfile.checker) · [`README.md` §3](README.md#L104-L125) · [Section 3 below](#3-checker-command-docker-build-line--model_off1-switch) |
@@ -47,6 +47,10 @@ The seed script ([`scripts/seed.js`](scripts/seed.js) / [`src/db.js`](src/db.js)
 3. **Separate worker judges & checks (`scripts/worker.js`):** The host worker executes `g++ -std=c++17 -O2` and hidden tests inside the hardened `--network none` sandbox container ([`src/sandbox/runner.js`](src/sandbox/runner.js)). Only `AC` submissions proceed to syntax-aware hard rules ([`src/checker/hard-rules.js`](src/checker/hard-rules.js)) and then Gemini semantic judging ([`src/checker/llm-client.js`](src/checker/llm-client.js)) with comments and PII stripped ([`src/checker/sanitize.js`](src/checker/sanitize.js)).
 4. **Student pre-publish visibility (`GET /api/submissions/:id`, `FAQ-02`, `FAQ-08`):** Polling shows `judgeStatus` (`queued` -> `running` -> `done`) and `testVerdict` / per-test verdicts (`AC`, `WA`, `TLE`, `MLE`, `RE`, `CE`), with **zero** `constraintVerdicts`, `deductions`, or `mark` exposed before TA Publish.
 5. **TA review queue & class isolation (`GET /api/labs/:labId/queue`, `FAQ-02`):** `ta_a` inspects counted submissions, flagged verdicts, exact evidence lines (`View code`), and TA deductions (`Mark Pass` / `Confirm Violation` via `POST /api/verdicts/:verdictId/review`). Note per `FAQ-02`: the review queue shows each student's latest counted submission, so 3 solutions can either be submitted across separate Class 1 students (`stu1`, `stu2`) or inspected after each submission (`GET /api/submissions/:id` returns staff details for every submission ID). Signing in as `ta_b` (`tok-ta-b`) returns `404 not-found`.
+
+**Live Azure Deployment Verification (`https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com`):**
+- Verified Criterion 1 end-to-end on the live HTTPS deployment: created `sort-merge` lab (7 tests + `C1`/`C2`), confirmed cross-class TA `ta_b` receives `404` on lab and queue, judged `s01.cpp` (`AC`, `C1=pass [hard_rule]`, `C2=pass [model]`), `s04.cpp` (`AC`, `C1=violation [hard_rule]` deduction `3`, `C2=violation [model]` deduction `4` with evidence), and injection `s09.cpp` (`AC`, `C1=pass [hard_rule]`, `C2=violation [model]`, lab `costSpentUsd=0.0025165`) while hiding all verdicts/marks from students before Publish (`FAQ-08`).
+- Verified Criterion 2 live on the same host: stopping `leetkob-worker` left a newly submitted `s01` job in `queued`, restarting `leetkob-worker` judged it once (`AC`, `2` verdicts), and live attack submissions failed inside the sandbox as required (`m1_network.cpp` -> `RE`, `m4_memory_1gib_readback.cpp` -> `MLE`, `m9_no_secrets.cpp` -> `RE`, `m9_include_env.cpp` -> `CE`). The VM SQLite database was then reset cleanly to seeded demo accounts (`labs` `1`–`3`).
 
 ---
 
