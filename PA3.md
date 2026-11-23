@@ -51,6 +51,7 @@ The seed script ([`scripts/seed.js`](scripts/seed.js) / [`src/db.js`](src/db.js)
 **Live Azure Deployment Verification (`https://leetkob-hcmus26.malaysiawest.cloudapp.azure.com`):**
 - Verified Criterion 1 end-to-end on the live HTTPS deployment: created `sort-merge` lab (7 tests + `C1`/`C2`), confirmed cross-class TA `ta_b` receives `404` on lab and queue, judged `s01.cpp` (`AC`, `C1=pass [hard_rule]`, `C2=pass [model]`), `s04.cpp` (`AC`, `C1=violation [hard_rule]` deduction `3`, `C2=violation [model]` deduction `4` with evidence), and injection `s09.cpp` (`AC`, `C1=pass [hard_rule]`, `C2=violation [model]`, lab `costSpentUsd=0.0025165`) while hiding all verdicts/marks from students before Publish (`FAQ-08`).
 - Verified Criterion 2 live on the same host: stopping `leetkob-worker` left a newly submitted `s01` job in `queued`, restarting `leetkob-worker` judged it once (`AC`, `2` verdicts), and live attack submissions failed inside the sandbox as required (`m1_network.cpp` -> `RE`, `m4_memory_1gib_readback.cpp` -> `MLE`, `m9_no_secrets.cpp` -> `RE`, `m9_include_env.cpp` -> `CE`). The VM SQLite database was then reset cleanly to seeded demo accounts (`labs` `1`–`3`).
+- Live runtime model note: The Azure `leetkob-worker` uses `MODEL_NAME=gemini-3.5-flash-lite` (`MODEL_TIMEOUT_MS=25000`) for low-latency (`~1.1–1.6s`) stability alongside the committed `gemini-3-flash-preview` dev-set evaluation in `eval/runs/pa3-dev/`.
 
 ---
 
