@@ -5,7 +5,10 @@ import { createAuth } from './auth.js';
 import { createHealthRoutes } from './routes/health.js';
 import { createQueueRoutes } from './routes/queue.js';
 import { createPublishRoutes } from './routes/publish.js';
+import { createLabRoutes } from './routes/labs.js';
 import { config } from './config.js';
+import { createSubmissionRoutes } from './routes/submissions.js';
+import { createMeRoutes } from './routes/me.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public', import.meta.url));
 
@@ -23,6 +26,9 @@ export function createApp(db) {
     ...createHealthRoutes(activeDb),
     ...createQueueRoutes(activeDb, auth),
     ...createPublishRoutes(activeDb, auth),
+    ...createLabRoutes(activeDb, auth),
+    ...createSubmissionRoutes(activeDb, auth),
+    ...createMeRoutes(activeDb, auth),
   ];
 
   /**

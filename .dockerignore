@@ -1,0 +1,9 @@
+node_modules
+.git
+.env
+marking.env
+ACCESS.md
+test
+e2e
+leetkob-eval
+eval

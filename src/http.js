@@ -50,7 +50,21 @@ export function problem(res, status, slug, title, extra = {}) {
  */
 export async function readJson(req) {
   let raw = '';
-  for await (const chunk of req) raw += chunk;
+  let bytes = 0;
+  let tooLarge = false;
+  const maxBytes = 1_048_576;
+  for await (const chunk of req) {
+    if (tooLarge) continue;
+    const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += part.length;
+    if (bytes > maxBytes) {
+      tooLarge = true;
+      raw = '';
+      continue;
+    }
+    raw += part.toString('utf8');
+  }
+  if (tooLarge) return { __payloadTooLarge: true };
   if (!raw.trim()) return {};
   try {
     const parsed = JSON.parse(raw);
