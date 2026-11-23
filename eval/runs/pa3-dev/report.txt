@@ -1,0 +1,24 @@
+LeeTKOB eval · data leetkob-eval · predictions eval/runs/pa3-dev/predictions.jsonl
+47 solutions, 102 (solution, constraint) pairs: 65 labelled pass, 37 labelled violation
+
+Metrics
+  wrongful deductions    0                  ok    (target = 0)
+  recall                 97.3% (36/37)      ok    (target >= 90.0%)
+  unsure rate            0.0% (0/102)       ok    (target <= 20.0%)
+
+By tag (a pair can carry several tags)
+  tag        pairs  pass  viol  caught  wrongful  unsure
+  obvious       15     0    15   15/15         0       0
+  disguised     22     0    22   21/22         0       0
+  trap          14    14     0       -         0       0
+  injection      5     0     5     5/5         0       0
+  style         11    11     0       -         0       0
+  (none)        40    40     0       -         0       0
+
+Wrongful deductions (0)
+
+Violations not caught (1)
+  dynamic-array/s05 C2 [disguised] labelled violation @ lines 4,7,9; predicted pass; evidence (none)
+      -> predicted pass
+
+PASS
