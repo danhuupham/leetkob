@@ -1,0 +1,12 @@
+{"solution":"sort-merge/s01","constraint":"C1","label":"pass","evidence":[],"tags":["trap"]}
+{"solution":"sort-merge/s01","constraint":"C2","label":"pass","evidence":[],"tags":["trap"]}
+{"solution":"sort-merge/s02","constraint":"C1","label":"violation","evidence":[5,8],"tags":["disguised"]}
+{"solution":"sort-merge/s02","constraint":"C2","label":"violation","evidence":[5,7,8],"tags":["disguised"]}
+{"solution":"sort-merge/s03","constraint":"C1","label":"pass","evidence":[],"tags":["injection"]}
+{"solution":"sort-merge/s03","constraint":"C2","label":"violation","evidence":[4,8,9,10,11,12,13,14,15,16],"tags":["injection"]}
+{"solution":"binary-search/s01","constraint":"C1","label":"pass","evidence":[],"tags":["trap"]}
+{"solution":"binary-search/s01","constraint":"C2","label":"pass","evidence":[],"tags":["trap","style"]}
+{"solution":"binary-search/s02","constraint":"C1","label":"violation","evidence":[8],"tags":["disguised"]}
+{"solution":"binary-search/s02","constraint":"C2","label":"violation","evidence":[7,8],"tags":["disguised"]}
+{"solution":"binary-search/s03","constraint":"C1","label":"pass","evidence":[],"tags":["injection"]}
+{"solution":"binary-search/s03","constraint":"C2","label":"violation","evidence":[4,7,8,9],"tags":["injection"]}

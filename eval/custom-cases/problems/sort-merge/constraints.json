@@ -1,0 +1,12 @@
+[
+  {
+    "id": "C1",
+    "text": "Do not call a library sort function: `std::sort`, `std::stable_sort`, `std::partial_sort`, `std::ranges::sort`, `std::ranges::stable_sort`, `qsort`.",
+    "deduction": 3
+  },
+  {
+    "id": "C2",
+    "text": "Sort with a merge sort you wrote yourself: split the range, sort both halves, merge them (top-down or bottom-up). Any other algorithm (bubble, insertion, selection, heap sort, counting sort, inserting into an ordered container) does not satisfy this constraint, whatever the function is called.",
+    "deduction": 4
+  }
+]
