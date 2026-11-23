@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { serveStatic } from '../../src/http.js';
 import { startApp } from '../helpers.js';
 
 test('GET /api/me includes classDetails for authorized classes', async () => {
@@ -87,6 +91,16 @@ test('GET /api/labs/:labId/submissions isolates students and enforces FAQ-08 bef
       )
       .run();
 
+    const stu3Old = await app.as('stu3').post('/api/labs/3/submissions', {
+      code: 'int main() { return 1; }',
+    });
+    assert.equal(stu3Old.status, 202);
+    const oldSubId = stu3Old.body.id;
+    app.db
+      .prepare(`UPDATE submissions SET judge_status = 'done', test_verdict = 'WA' WHERE id = ?`)
+      .run(oldSubId);
+    app.db.prepare(`UPDATE judge_jobs SET status = 'done' WHERE submission_id = ?`).run(oldSubId);
+
     const stu3Sub = await app.as('stu3').post('/api/labs/3/submissions', {
       code: 'int main() { return 0; }',
     });
@@ -109,7 +123,7 @@ test('GET /api/labs/:labId/submissions isolates students and enforces FAQ-08 bef
     const beforePublish = await app.as('stu3').get('/api/labs/3/submissions');
     assert.equal(beforePublish.status, 200);
     assert.equal(beforePublish.body.publishedAt, null);
-    assert.equal(beforePublish.body.submissions.length, 1);
+    assert.equal(beforePublish.body.submissions.length, 2);
     const hiddenItem = beforePublish.body.submissions[0];
     assert.equal(hiddenItem.id, subId);
     assert.equal(hiddenItem.testVerdict, 'AC');
@@ -123,11 +137,11 @@ test('GET /api/labs/:labId/submissions isolates students and enforces FAQ-08 bef
     assert.equal(stu2OwnOnly.status, 200);
     assert.equal(stu2OwnOnly.body.submissions.length, 0);
 
-    // Move deadline into past (with submission prior to deadline per FAQ-02) and publish lab 3.
+    // Move deadline into past (with submissions prior to deadline per FAQ-02) and publish lab 3.
     app.db.prepare("UPDATE labs SET deadline_at = '2026-01-01 00:00:00' WHERE id = 3").run();
     app.db
-      .prepare("UPDATE submissions SET submitted_at = '2025-12-31 23:59:59' WHERE id = ?")
-      .run(subId);
+      .prepare("UPDATE submissions SET submitted_at = '2025-12-31 23:59:59' WHERE id IN (?, ?)")
+      .run(oldSubId, subId);
     const pub = await app.as('ta_b').post('/api/labs/3/publish');
     assert.equal(pub.status, 200);
 
@@ -135,15 +149,27 @@ test('GET /api/labs/:labId/submissions isolates students and enforces FAQ-08 bef
     assert.equal(taSubs.status, 200);
     assert.equal(taSubs.body.submissions[0].student, 'stu3');
     assert.equal(taSubs.body.submissions[0].mark, 7);
+    assert.equal(Object.hasOwn(taSubs.body.submissions[0], 'code'), false);
 
     const afterPublish = await app.as('stu3').get('/api/labs/3/submissions');
     assert.equal(afterPublish.status, 200);
     assert.ok(afterPublish.body.publishedAt);
-    const visibleItem = afterPublish.body.submissions[0];
-    assert.equal(visibleItem.mark, 7);
-    assert.equal(visibleItem.deductions.length, 1);
-    assert.equal(visibleItem.deductions[0].constraintCode, 'C1');
-    assert.equal(Object.hasOwn(visibleItem, 'constraintVerdicts'), false);
+    const countedItem = afterPublish.body.submissions.find(
+      (/** @type {{ id: number }} */ s) => s.id === subId,
+    );
+    const supersededItem = afterPublish.body.submissions.find(
+      (/** @type {{ id: number }} */ s) => s.id === oldSubId,
+    );
+    assert.equal(countedItem.counted, true);
+    assert.equal(countedItem.mark, 7);
+    assert.equal(countedItem.code, 'int main() { return 0; }');
+    assert.equal(countedItem.deductions.length, 1);
+    assert.equal(countedItem.deductions[0].constraintCode, 'C1');
+    assert.equal(Object.hasOwn(countedItem, 'constraintVerdicts'), false);
+
+    assert.equal(supersededItem.counted, false);
+    assert.equal(Object.hasOwn(supersededItem, 'mark'), false);
+    assert.equal(Object.hasOwn(supersededItem, 'deductions'), false);
 
     // Student lab summary reflects published mark too.
     const stu3Labs = await app.as('stu3').get('/api/labs');
@@ -151,5 +177,34 @@ test('GET /api/labs/:labId/submissions isolates students and enforces FAQ-08 bef
     assert.equal(lab3.latestSubmission.mark, 7);
   } finally {
     await app.close();
+  }
+});
+
+test('serveStatic writes headers and omits response body for HEAD requests', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'leetkob-static-'));
+  try {
+    writeFileSync(join(dir, 'index.html'), '<h1>LeeTKOB</h1>', 'utf8');
+    /** @type {{ status: number | null, headers: Record<string, string>, ended: unknown }} */
+    const mockRes = { status: null, headers: {}, ended: 'unset' };
+    const fakeRes = /** @type {import('node:http').ServerResponse} */ (
+      /** @type {unknown} */ ({
+        writeHead(status, headers) {
+          mockRes.status = status;
+          mockRes.headers = headers;
+        },
+        end(body) {
+          mockRes.ended = body;
+        },
+      })
+    );
+
+    const handled = serveStatic(dir, '/', fakeRes, true);
+    assert.equal(handled, true);
+    assert.equal(mockRes.status, 200);
+    assert.equal(mockRes.headers['content-type'], 'text/html; charset=utf-8');
+    assert.equal(mockRes.headers['content-length'], '16');
+    assert.equal(mockRes.ended, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
