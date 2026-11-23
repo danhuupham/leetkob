@@ -1,4 +1,4 @@
-// Gemini 3.8 Flash HTTP client and semantic constraint prompt builder.
+// Gemini 3 Flash Preview HTTP client and semantic constraint prompt builder.
 // Passes the API key exclusively in the `x-goog-api-key` header (never in URL query parameters).
 
 const SYSTEM_INSTRUCTION =
@@ -6,18 +6,22 @@ const SYSTEM_INSTRUCTION =
 
 /**
  * Computes the USD cost of a Gemini Flash call based on model pricing:
- * - `gemini-3.8-flash` (default): `$0.75 / 1M` input, `$3.75 / 1M` output (including thinking tokens)
- * - `gemini-3-flash-preview`: `$0.50 / 1M` input, `$3.00 / 1M` output (including thinking tokens)
+ * - `gemini-3-flash-preview` (default): `$0.50 / 1M` input, `$3.00 / 1M` output (including thinking tokens)
+ * - `gemini-3.8-flash` (explicit override): `$0.75 / 1M` input, `$3.75 / 1M` output (including thinking tokens)
  *
  * @param {number} inputTokens
  * @param {number} outputTokens
  * @param {string} [modelName]
  * @returns {number}
  */
-export function computeGeminiCostUsd(inputTokens, outputTokens, modelName = 'gemini-3.8-flash') {
-  const isPreviewFlash = modelName === 'gemini-3-flash-preview';
-  const inputRatePer1M = isPreviewFlash ? 0.5 : 0.75;
-  const outputRatePer1M = isPreviewFlash ? 3.0 : 3.75;
+export function computeGeminiCostUsd(
+  inputTokens,
+  outputTokens,
+  modelName = 'gemini-3-flash-preview',
+) {
+  const is38Flash = modelName === 'gemini-3.8-flash';
+  const inputRatePer1M = is38Flash ? 0.75 : 0.5;
+  const outputRatePer1M = is38Flash ? 3.75 : 3.0;
   return (inputTokens * inputRatePer1M + outputTokens * outputRatePer1M) / 1_000_000;
 }
 

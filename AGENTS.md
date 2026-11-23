@@ -2,7 +2,7 @@
 
 ## Stack
 - Node.js `>=22.13` (ESM, `node:http`, `node:sqlite`), ESLint 10, Prettier 3, TypeScript 7 (`tsc --noEmit`), Playwright.
-- LLM (`PA#3`+): Gemini 3.8 Flash (`gemini-3.8-flash`) on server only (`$0.50/lab` cap, `$5/month` provider cap). Sandbox: Docker (`g++ -std=c++17 -O2`, `--network none`, `--user 65534:65534`, `--read-only`).
+- LLM (`PA#3`+): Gemini 3 Flash Preview (`gemini-3-flash-preview`) on server only (`$0.50/lab` cap, `$5/month` provider cap). Sandbox: Docker (`g++ -std=c++17 -O2`, `--network none`, `--user 65534:65534`, `--read-only`).
 
 ## Commands
 - `npm ci` · `npm run migrate` · `npm run seed` · `npm start` · `npm run format` · `npm run lint` · `npm run format:check` · `npm run typecheck` · `npm test` · `npm run contract` · `npm run scan` · `npm run verify:eval` · `npm run check` · `npm run e2e`

@@ -53,7 +53,7 @@ export function loadConfig(env = process.env) {
     databaseUrl: env.DATABASE_URL || ':memory:',
     sessionSecret,
     modelProvider: env.MODEL_PROVIDER || 'gemini',
-    modelName: env.MODEL_NAME || 'gemini-3.8-flash',
+    modelName: env.MODEL_NAME || 'gemini-3-flash-preview',
     modelApiKey,
     modelMaxCostUsdPerLab,
     modelTimeoutMs: Number(env.MODEL_TIMEOUT_MS || 10000),

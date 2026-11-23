@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { markFor, needsReview } from '../../src/grades.js';
 import { loadConfig, getSandboxEnv } from '../../src/config.js';
+import { computeGeminiCostUsd } from '../../src/checker/llm-client.js';
 
 test('no violation keeps the full mark', () => {
   assert.equal(markFor([{ verdict: 'pass', deduction: 3 }]), 10);
@@ -51,4 +52,10 @@ test('loadConfig enforces FAQ-05 sandbox memory bounds (64..512 MB) and producti
   assert.equal(cfg.sandbox.memoryLimitMb, 256);
   assert.throws(() => loadConfig({ NODE_ENV: 'test', SANDBOX_MEMORY_LIMIT_MB: '1024' }));
   assert.throws(() => loadConfig({ NODE_ENV: 'production', MODEL_API_KEY: '' }));
+});
+
+test('default MODEL_NAME is unified to gemini-3-flash-preview across config and cost calculation', () => {
+  const cfg = loadConfig({ NODE_ENV: 'test' });
+  assert.equal(cfg.modelName, 'gemini-3-flash-preview');
+  assert.ok(Math.abs(computeGeminiCostUsd(1_000_000, 1_000_000) - 3.5) < 1e-12);
 });
