@@ -12,9 +12,71 @@ interface CreateLabViewProps {
   onStatus: (message: string, tone: 'info' | 'success' | 'error') => void;
 }
 
+interface TestCaseDraft {
+  stem?: string;
+  input: string;
+  expectedOutput: string;
+  hasInput: boolean;
+  hasOutput: boolean;
+}
+
+interface ConstraintDraft {
+  code: string;
+  text: string;
+  deductionText: string;
+}
+
 function formatUtcDateTime(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+}
+
+function parseConstraintsPayload(raw: unknown): ConstraintDraft[] {
+  const list = Array.isArray(raw)
+    ? raw
+    : raw &&
+        typeof raw === 'object' &&
+        Array.isArray((raw as { constraints?: unknown }).constraints)
+      ? (raw as { constraints: unknown[] }).constraints
+      : null;
+  if (!list) {
+    throw new Error('Expected a JSON array or {"constraints": [...]} object.');
+  }
+  return list.map((c, idx) => {
+    const obj = (c ?? {}) as Record<string, unknown>;
+    const ded = obj.deduction;
+    return {
+      code:
+        typeof obj.code === 'string'
+          ? obj.code
+          : typeof obj.id === 'string'
+            ? obj.id
+            : `C${idx + 1}`,
+      text: typeof obj.text === 'string' ? obj.text : '',
+      deductionText: typeof ded === 'number' && Number.isFinite(ded) ? String(ded) : '2',
+    };
+  });
+}
+
+function toApiConstraints(drafts: ConstraintDraft[]): LabConstraint[] {
+  return drafts.map((d, idx) => {
+    const trimmed = d.deductionText.trim();
+    const num = Number(trimmed);
+    if (!trimmed || !Number.isInteger(num) || num < 0 || num > 10) {
+      throw new Error(
+        `Constraint ${d.code || `#${idx + 1}`} deduction must be an integer between 0 and 10.`,
+      );
+    }
+    return {
+      code: d.code,
+      text: d.text,
+      deduction: num,
+    };
+  });
+}
+
+function toApiTests(drafts: TestCaseDraft[]): LabTestCase[] {
+  return drafts.map((t) => ({ input: t.input, expectedOutput: t.expectedOutput }));
 }
 
 export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: CreateLabViewProps) {
@@ -27,16 +89,18 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
   const [title, setTitle] = useState('');
   const [statement, setStatement] = useState('');
   const [deadlineAt, setDeadlineAt] = useState('2099-12-31 23:59:59');
-  const [cpuLimitSec, setCpuLimitSec] = useState(2);
-  const [memoryLimitMb, setMemoryLimitMb] = useState(256);
+  const [cpuLimitText, setCpuLimitText] = useState('2');
+  const [memoryLimitText, setMemoryLimitText] = useState('256');
 
   const [testsMode, setTestsMode] = useState<'visual' | 'json'>('visual');
-  const [tests, setTests] = useState<LabTestCase[]>([{ input: '', expectedOutput: '' }]);
+  const [tests, setTests] = useState<TestCaseDraft[]>([
+    { input: '', expectedOutput: '', hasInput: false, hasOutput: false },
+  ]);
   const [testsJson, setTestsJson] = useState('[{"input":"","expectedOutput":""}]');
 
   const [constraintsMode, setConstraintsMode] = useState<'visual' | 'json'>('visual');
-  const [constraints, setConstraints] = useState<LabConstraint[]>([
-    { code: 'C1', text: 'Do not use `std::sort`', deduction: 3 },
+  const [constraints, setConstraints] = useState<ConstraintDraft[]>([
+    { code: 'C1', text: 'Do not use `std::sort`', deductionText: '3' },
   ]);
   const [constraintsJson, setConstraintsJson] = useState(
     JSON.stringify([{ code: 'C1', text: 'Do not use `std::sort`', deduction: 3 }], null, 2),
@@ -47,7 +111,7 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
   function switchTestsMode(nextMode: 'visual' | 'json') {
     if (nextMode === testsMode) return;
     if (nextMode === 'json') {
-      setTestsJson(JSON.stringify(tests, null, 2));
+      setTestsJson(JSON.stringify(toApiTests(tests), null, 2));
       setTestsMode('json');
       return;
     }
@@ -55,13 +119,15 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
       const parsed = JSON.parse(testsJson) as unknown;
       if (!Array.isArray(parsed)) throw new Error('Hidden tests JSON must be an array.');
       setTests(
-        parsed.map((t) => ({
-          input: typeof (t as LabTestCase)?.input === 'string' ? (t as LabTestCase).input : '',
-          expectedOutput:
-            typeof (t as LabTestCase)?.expectedOutput === 'string'
-              ? (t as LabTestCase).expectedOutput
-              : '',
-        })),
+        parsed.map((t) => {
+          const tc = t as Partial<LabTestCase> | null;
+          return {
+            input: typeof tc?.input === 'string' ? tc.input : '',
+            expectedOutput: typeof tc?.expectedOutput === 'string' ? tc.expectedOutput : '',
+            hasInput: typeof tc?.input === 'string',
+            hasOutput: typeof tc?.expectedOutput === 'string',
+          };
+        }),
       );
       setTestsMode('visual');
     } catch (err) {
@@ -72,28 +138,17 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
   function switchConstraintsMode(nextMode: 'visual' | 'json') {
     if (nextMode === constraintsMode) return;
     if (nextMode === 'json') {
-      setConstraintsJson(JSON.stringify(constraints, null, 2));
+      const serializable = constraints.map((d) => ({
+        code: d.code,
+        text: d.text,
+        deduction: d.deductionText.trim() !== '' ? Number(d.deductionText) : 0,
+      }));
+      setConstraintsJson(JSON.stringify(serializable, null, 2));
       setConstraintsMode('json');
       return;
     }
     try {
-      const parsed = JSON.parse(constraintsJson) as unknown;
-      if (!Array.isArray(parsed)) throw new Error('Constraints JSON must be an array.');
-      setConstraints(
-        parsed.map((c, idx) => {
-          const obj = (c ?? {}) as Record<string, unknown>;
-          return {
-            code:
-              typeof obj.code === 'string'
-                ? obj.code
-                : typeof obj.id === 'string'
-                  ? obj.id
-                  : `C${idx + 1}`,
-            text: typeof obj.text === 'string' ? obj.text : '',
-            deduction: typeof obj.deduction === 'number' ? obj.deduction : 2,
-          };
-        }),
-      );
+      setConstraints(parseConstraintsPayload(JSON.parse(constraintsJson)));
       setConstraintsMode('visual');
     } catch (err) {
       onStatus(err instanceof Error ? err.message : 'Invalid constraints JSON.', 'error');
@@ -121,7 +176,18 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
 
-    const pairs = new Map<string, { input?: string; expectedOutput?: string }>();
+    const mergedByStem = new Map<string, TestCaseDraft>();
+    const manualCases: TestCaseDraft[] = [];
+
+    for (const existing of tests) {
+      if (existing.stem) {
+        mergedByStem.set(existing.stem, { ...existing });
+      } else if (existing.input !== '' || existing.expectedOutput !== '') {
+        manualCases.push(existing);
+      }
+    }
+
+    let uploadedMatchedCount = 0;
     let ignoredCount = 0;
 
     for (const file of files) {
@@ -130,38 +196,49 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
         ignoredCount += 1;
         continue;
       }
+      uploadedMatchedCount += 1;
       const stem = match[1];
       const ext = match[2].toLowerCase();
-      const entry = pairs.get(stem) ?? {};
+      const entry = mergedByStem.get(stem) ?? {
+        stem,
+        input: '',
+        expectedOutput: '',
+        hasInput: false,
+        hasOutput: false,
+      };
       const content = await file.text();
-      if (ext === 'in') entry.input = content;
-      else entry.expectedOutput = content;
-      pairs.set(stem, entry);
+      if (ext === 'in') {
+        entry.input = content;
+        entry.hasInput = true;
+      } else {
+        entry.expectedOutput = content;
+        entry.hasOutput = true;
+      }
+      mergedByStem.set(stem, entry);
     }
 
-    const sortedStems = Array.from(pairs.keys()).sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true }),
-    );
-    const loaded: LabTestCase[] = sortedStems.map((stem) => {
-      const item = pairs.get(stem) ?? {};
-      return {
-        input: item.input ?? '',
-        expectedOutput: item.expectedOutput ?? '',
-      };
-    });
-
-    if (loaded.length === 0) {
+    if (uploadedMatchedCount === 0) {
       onStatus('Select .in and .out file pairs (e.g. 01.in + 01.out).', 'error');
       e.target.value = '';
       return;
     }
 
+    const sortedStems = Array.from(mergedByStem.keys()).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
+    );
+    const loaded: TestCaseDraft[] = [
+      ...manualCases,
+      ...sortedStems.map((stem) => mergedByStem.get(stem)!),
+    ];
+
     setTests(loaded);
-    setTestsJson(JSON.stringify(loaded, null, 2));
-    const missingPairs = loaded.filter((t) => !t.input || !t.expectedOutput).length;
+    setTestsJson(JSON.stringify(toApiTests(loaded), null, 2));
+    const missingPairs = sortedStems
+      .map((stem) => mergedByStem.get(stem)!)
+      .filter((t) => !t.hasInput || !t.hasOutput).length;
     onStatus(
       `Loaded ${loaded.length} test case(s)` +
-        (missingPairs > 0 ? ` (${missingPairs} missing a matching .in/.out file)` : '') +
+        (missingPairs > 0 ? ` (${missingPairs} still missing a matching .in or .out file)` : '') +
         (ignoredCount > 0 ? `, ignored ${ignoredCount} non-.in/.out file(s)` : ''),
       missingPairs > 0 ? 'info' : 'success',
     );
@@ -172,32 +249,9 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const raw = JSON.parse(await file.text()) as unknown;
-      const list = Array.isArray(raw)
-        ? raw
-        : raw &&
-            typeof raw === 'object' &&
-            Array.isArray((raw as { constraints?: unknown }).constraints)
-          ? (raw as { constraints: unknown[] }).constraints
-          : null;
-      if (!list) {
-        throw new Error('Expected a JSON array or {"constraints": [...]} object.');
-      }
-      const normalized: LabConstraint[] = list.map((c, idx) => {
-        const obj = (c ?? {}) as Record<string, unknown>;
-        return {
-          code:
-            typeof obj.code === 'string'
-              ? obj.code
-              : typeof obj.id === 'string'
-                ? obj.id
-                : `C${idx + 1}`,
-          text: typeof obj.text === 'string' ? obj.text : '',
-          deduction: typeof obj.deduction === 'number' ? obj.deduction : 2,
-        };
-      });
+      const normalized = parseConstraintsPayload(JSON.parse(await file.text()));
       setConstraints(normalized);
-      setConstraintsJson(JSON.stringify(normalized, null, 2));
+      setConstraintsJson(JSON.stringify(toApiConstraints(normalized), null, 2));
       onStatus(`Loaded ${normalized.length} constraint(s) from ${file.name}`, 'success');
     } catch (err) {
       onStatus(err instanceof Error ? err.message : 'Failed to parse constraints JSON.', 'error');
@@ -207,8 +261,30 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    let payloadTests = tests;
-    let payloadConstraints = constraints;
+
+    const cpuLimitSec = Number(cpuLimitText.trim());
+    const memoryLimitMb = Number(memoryLimitText.trim());
+    if (
+      !cpuLimitText.trim() ||
+      !Number.isInteger(cpuLimitSec) ||
+      cpuLimitSec < 1 ||
+      cpuLimitSec > 5
+    ) {
+      onStatus('CPU limit must be an integer between 1 and 5 seconds.', 'error');
+      return;
+    }
+    if (
+      !memoryLimitText.trim() ||
+      !Number.isInteger(memoryLimitMb) ||
+      memoryLimitMb < 64 ||
+      memoryLimitMb > 512
+    ) {
+      onStatus('Memory limit must be an integer between 64 and 512 MB.', 'error');
+      return;
+    }
+
+    let payloadTests: LabTestCase[];
+    let payloadConstraints: LabConstraint[];
 
     if (testsMode === 'json') {
       try {
@@ -219,29 +295,19 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
         onStatus(err instanceof Error ? err.message : 'Invalid hidden tests JSON.', 'error');
         return;
       }
+    } else {
+      payloadTests = toApiTests(tests);
     }
 
-    if (constraintsMode === 'json') {
-      try {
-        const parsed = JSON.parse(constraintsJson) as unknown;
-        if (!Array.isArray(parsed)) throw new Error('Constraints JSON must be an array.');
-        payloadConstraints = parsed.map((c, idx) => {
-          const obj = (c ?? {}) as Record<string, unknown>;
-          return {
-            code:
-              typeof obj.code === 'string'
-                ? obj.code
-                : typeof obj.id === 'string'
-                  ? obj.id
-                  : `C${idx + 1}`,
-            text: typeof obj.text === 'string' ? obj.text : '',
-            deduction: typeof obj.deduction === 'number' ? obj.deduction : 2,
-          };
-        });
-      } catch (err) {
-        onStatus(err instanceof Error ? err.message : 'Invalid constraints JSON.', 'error');
-        return;
-      }
+    try {
+      const drafts =
+        constraintsMode === 'json'
+          ? parseConstraintsPayload(JSON.parse(constraintsJson))
+          : constraints;
+      payloadConstraints = toApiConstraints(drafts);
+    } catch (err) {
+      onStatus(err instanceof Error ? err.message : 'Invalid constraints JSON.', 'error');
+      return;
     }
 
     setSubmitting(true);
@@ -387,8 +453,8 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
               type="number"
               min="1"
               max="5"
-              value={cpuLimitSec}
-              onChange={(e) => setCpuLimitSec(Number(e.target.value))}
+              value={cpuLimitText}
+              onChange={(e) => setCpuLimitText(e.target.value)}
             />
           </div>
 
@@ -400,8 +466,8 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
               type="number"
               min="64"
               max="512"
-              value={memoryLimitMb}
-              onChange={(e) => setMemoryLimitMb(Number(e.target.value))}
+              value={memoryLimitText}
+              onChange={(e) => setMemoryLimitText(e.target.value)}
             />
           </div>
         </div>
@@ -445,7 +511,10 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
               {tests.map((tc, idx) => (
                 <div key={idx} className="builder-card">
                   <div className="builder-card-top">
-                    <strong>Test #{idx + 1}</strong>
+                    <strong>
+                      Test #{idx + 1}
+                      {tc.stem ? ` (${tc.stem})` : ''}
+                    </strong>
                     {tests.length > 1 && (
                       <button
                         type="button"
@@ -467,7 +536,7 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
                         onChange={(e) =>
                           setTests((prev) =>
                             prev.map((row, i) =>
-                              i === idx ? { ...row, input: e.target.value } : row,
+                              i === idx ? { ...row, input: e.target.value, hasInput: true } : row,
                             ),
                           )
                         }
@@ -483,7 +552,9 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
                         onChange={(e) =>
                           setTests((prev) =>
                             prev.map((row, i) =>
-                              i === idx ? { ...row, expectedOutput: e.target.value } : row,
+                              i === idx
+                                ? { ...row, expectedOutput: e.target.value, hasOutput: true }
+                                : row,
                             ),
                           )
                         }
@@ -496,7 +567,12 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => setTests((prev) => [...prev, { input: '', expectedOutput: '' }])}
+                  onClick={() =>
+                    setTests((prev) => [
+                      ...prev,
+                      { input: '', expectedOutput: '', hasInput: false, hasOutput: false },
+                    ])
+                  }
                 >
                   <PlusIcon />
                   <span>Add test</span>
@@ -613,11 +689,11 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
                         type="number"
                         min="0"
                         max="10"
-                        value={c.deduction}
+                        value={c.deductionText}
                         onChange={(e) =>
                           setConstraints((prev) =>
                             prev.map((row, i) =>
-                              i === idx ? { ...row, deduction: Number(e.target.value) } : row,
+                              i === idx ? { ...row, deductionText: e.target.value } : row,
                             ),
                           )
                         }
@@ -633,7 +709,7 @@ export function CreateLabView({ token, me, onCreated, onCancel, onStatus }: Crea
                   onClick={() =>
                     setConstraints((prev) => [
                       ...prev,
-                      { code: `C${prev.length + 1}`, text: '', deduction: 2 },
+                      { code: `C${prev.length + 1}`, text: '', deductionText: '2' },
                     ])
                   }
                 >

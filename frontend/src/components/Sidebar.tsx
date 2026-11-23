@@ -37,7 +37,8 @@ export function Sidebar({
       {isStaff && (
         <button
           type="button"
-          className={activeView === 'create' ? 'btn btn-primary' : 'btn btn-primary'}
+          className="btn btn-primary"
+          aria-current={activeView === 'create' ? 'page' : undefined}
           onClick={onOpenCreate}
         >
           <PlusIcon />

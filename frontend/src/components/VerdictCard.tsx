@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { EvidenceLine } from '../types';
 import { CodeViewer } from './CodeViewer';
 
@@ -22,6 +22,7 @@ interface VerdictCardProps {
   item: ReviewableVerdict;
   published: boolean;
   showStudentCodeViewer?: boolean;
+  externalLineSelection?: EvidenceLine | null;
   onReviewDecision: (
     verdictId: number,
     decision: 'pass' | 'violation',
@@ -35,6 +36,7 @@ export function VerdictCard({
   item,
   published,
   showStudentCodeViewer = true,
+  externalLineSelection = null,
   onReviewDecision,
   onError,
 }: VerdictCardProps) {
@@ -43,6 +45,12 @@ export function VerdictCard({
   const [busy, setBusy] = useState(false);
 
   const hasSuggestedEvidence = item.evidence.length > 0;
+
+  useEffect(() => {
+    if (!externalLineSelection || hasSuggestedEvidence) return;
+    setLineInput(String(externalLineSelection.line));
+    setTextInput(externalLineSelection.text.trim());
+  }, [externalLineSelection, hasSuggestedEvidence]);
   const verdictPillClass =
     item.verdict === 'pass'
       ? 'pill pill-success'

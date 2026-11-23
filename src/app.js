@@ -43,8 +43,8 @@ export function createApp(db) {
       return matched.handler(req, res, matched.params);
     }
 
-    if (req.method === 'GET' && !url.pathname.startsWith('/api/')) {
-      if (serveStatic(PUBLIC_DIR, url.pathname, res)) return;
+    if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) {
+      if (serveStatic(PUBLIC_DIR, url.pathname, res, req.method === 'HEAD')) return;
     }
 
     return problem(res, 404, 'not-found', 'No such lab', {

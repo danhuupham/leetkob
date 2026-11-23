@@ -180,6 +180,8 @@ export function createSubmissionRoutes(db, auth) {
             countedByStudent.set(sid, cRow?.counted_id ?? null);
           }
 
+          const counted = Number(countedByStudent.get(sid)) === Number(row.id);
+
           /** @type {Record<string, unknown>} */
           const item = {
             id: Number(row.id),
@@ -187,19 +189,20 @@ export function createSubmissionRoutes(db, auth) {
             judgeStatus: row.judge_status,
             status: row.judge_status,
             jobStatus: row.job_status ?? null,
-            counted: Number(countedByStudent.get(sid)) === Number(row.id),
+            counted,
             testVerdict: row.test_verdict,
             testResults: safeJsonParse(row.test_results_json, /** @type {unknown[]} */ ([])),
             submittedAt: row.submitted_at,
-            code: row.code,
           };
 
-          if (isStaff) {
+          if (isStudent) {
+            item.code = row.code;
+          } else {
             item.student = row.student_name;
             item.studentId = sid;
           }
 
-          if (published) {
+          if (published && counted) {
             const pub = loadPublishedFields(lab.id, Number(row.id), row);
             item.mark = pub.mark;
             item.deductions = pub.deductions;

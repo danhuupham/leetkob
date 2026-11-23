@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { apiFetch, isBanListRuleText } from '../api';
 import type { LabDetail, LabSubmissionsResponse, SubmissionRecord } from '../types';
@@ -34,9 +34,14 @@ export function StudentWorkspace({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const settledRef = useRef(onSubmissionSettled);
+  settledRef.current = onSubmissionSettled;
+  const historySeqRef = useRef(0);
+
   const codeBytes = new TextEncoder().encode(code).length;
 
   async function fetchHistory(selectId?: number) {
+    const seq = ++historySeqRef.current;
     setLoadingHistory(true);
     try {
       const data = await apiFetch<LabSubmissionsResponse>(
@@ -44,6 +49,7 @@ export function StudentWorkspace({
         'GET',
         `/api/labs/${lab.id}/submissions`,
       );
+      if (historySeqRef.current !== seq) return;
       setSubmissions(data.submissions);
       if (selectId !== undefined) {
         setSelectedId(selectId);
@@ -55,9 +61,12 @@ export function StudentWorkspace({
         setSelectedId(null);
       }
     } catch (err) {
+      if (historySeqRef.current !== seq) return;
       onStatus(err instanceof Error ? err.message : 'Failed to load submission history.', 'error');
     } finally {
-      setLoadingHistory(false);
+      if (historySeqRef.current === seq) {
+        setLoadingHistory(false);
+      }
     }
   }
 
@@ -66,43 +75,61 @@ export function StudentWorkspace({
     setSubmissions([]);
     setSelectedId(null);
     void fetchHistory();
+    return () => {
+      historySeqRef.current += 1;
+    };
   }, [lab.id, token]);
 
   const activeSub =
     submissions.find((s) => s.id === selectedId) ??
     (submissions.length > 0 ? submissions[0] : null);
+  const activeSubId = activeSub?.id ?? null;
 
-  const isPolling = Boolean(
+  const shouldPoll = Boolean(
     activeSub && activeSub.judgeStatus !== 'done' && activeSub.jobStatus !== 'failed',
   );
 
   useEffect(() => {
-    if (!activeSub || !isPolling) return;
+    if (activeSubId === null || !shouldPoll) return;
     let cancelled = false;
-    const timer = setTimeout(async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const pollOnce = async () => {
+      if (cancelled) return;
+      let keepPolling = true;
       try {
         const updated = await apiFetch<SubmissionRecord>(
           token,
           'GET',
-          `/api/submissions/${activeSub.id}`,
+          `/api/submissions/${activeSubId}`,
         );
         if (cancelled) return;
         setSubmissions((prev) =>
           prev.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)),
         );
         if (updated.judgeStatus === 'done' || updated.jobStatus === 'failed') {
-          await onSubmissionSettled();
+          keepPolling = false;
+          await settledRef.current();
         }
       } catch {
-        // Ignore transient poll hiccup; user can also click Refresh.
+        // Retry cleanly on transient network error until settled or unmounted.
       }
+      if (!cancelled && keepPolling) {
+        timer = setTimeout(() => {
+          void pollOnce();
+        }, 1000);
+      }
+    };
+
+    timer = setTimeout(() => {
+      void pollOnce();
     }, 1000);
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      if (timer !== null) clearTimeout(timer);
     };
-  }, [activeSub?.id, activeSub?.judgeStatus, activeSub?.jobStatus, isPolling, token]);
+  }, [activeSubId, shouldPoll, token]);
 
   async function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -254,6 +281,12 @@ export function StudentWorkspace({
             onKeyDown={handleEditorKeyDown}
           />
 
+          {lab.deadlinePassed && !lab.publishedAt && (
+            <div className="notice-box">
+              Submission deadline has passed — new submissions are closed.
+            </div>
+          )}
+
           <div className="card-header">
             <span className={codeBytes > MAX_CODE_BYTES ? 'pill pill-danger' : 'muted'}>
               {codeBytes.toLocaleString()} / {MAX_CODE_BYTES.toLocaleString()} bytes
@@ -262,7 +295,12 @@ export function StudentWorkspace({
               id="submit"
               type="button"
               className="btn btn-primary"
-              disabled={submitting || codeBytes > MAX_CODE_BYTES || Boolean(lab.publishedAt)}
+              disabled={
+                submitting ||
+                codeBytes > MAX_CODE_BYTES ||
+                Boolean(lab.publishedAt) ||
+                Boolean(lab.deadlinePassed)
+              }
               onClick={() => void handleSubmit()}
             >
               {submitting ? 'Submitting...' : 'Submit C++'}
@@ -337,11 +375,18 @@ export function StudentWorkspace({
                 </div>
               )}
 
-              {activeSub.mark === undefined ? (
+              {!lab.publishedAt ? (
                 <div className="notice-box">
                   Grades and constraint review details remain hidden until the TA publishes results
                   after the deadline.
                 </div>
+              ) : !activeSub.counted ? (
+                <div className="notice-box">
+                  Not counted for grade — only your latest submission before the deadline is graded
+                  (FAQ-02).
+                </div>
+              ) : activeSub.mark === undefined ? (
+                <div className="notice-box">Grade breakdown unavailable for this submission.</div>
               ) : (
                 <div className="builder-list">
                   <div className="mark-banner">
