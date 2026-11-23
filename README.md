@@ -114,10 +114,9 @@ Every check runs with one documented command locally and in GitHub Actions (`.gi
 
 In accordance with the LeeTKOB Class Brief (§3 & §5) and `PA#2`–`PA#5` Rubrics:
 
-- **Model Provider & Model:** Google Gemini API — default `gemini-3.8-flash` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-3.8-flash`; `$0.75 / 1M` input, `$3.75 / 1M` output including thinking tokens), with `--model` / `MODEL_NAME` override supporting `gemini-3-flash-preview` (`$0.50 / 1M` input, `$3.00 / 1M` output including thinking tokens), invoked exclusively from the backend server (`src/`).
-- **Estimated & Measured Cost per Lab (80 submissions):**
-  - **Budget estimate (`gemini-3.8-flash`):** ~80 Accepted C++ submissions (`~1,200` input + `~250` output/thinking tokens per semantic check) → `$0.072 + $0.075 =` **~$0.147 USD/lab**.
-  - **Measured `PA#3` dev-set run (`eval/runs/pa3-dev/`, `gemini-3-flash-preview`, `39/39` `ok` calls):** `38,522` input tokens (`~988`/call) + `4,851` output+thinking tokens (`~124`/call, including `thoughtsTokenCount`) = **`$0.033814 USD`** (`$0.000867/call`) → **`~$0.069 USD`** per 80-submission lab (`~$0.097 USD/lab` at `gemini-3.8-flash` rates), well within the `$0.50/lab` cap.
+- **Model Provider & Model:** Google Gemini API — `gemini-3-flash-preview` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-3-flash-preview`; `$0.50 / 1M` input, `$3.00 / 1M` output including thinking tokens), invoked exclusively from the backend server (`src/`).
+- **Measured Cost per Lab (80 submissions, `gemini-3-flash-preview`):**
+  - **Measured `PA#3` dev-set run (`eval/runs/pa3-dev/`, `39/39` `ok` calls across 47 submissions):** `38,522` input tokens (`~988`/call) + `4,851` output+thinking tokens (`~124`/call, including `thoughtsTokenCount`) = **`$0.033814 USD`** (`$0.000867/call`) → **`~$0.069 USD`** per 80-submission lab (`80 * $0.000867`), well within the `$0.50/lab` cap.
 - **Offline Dataset Checker CLI & Container (`MODEL_OFF=1`):**
   ```bash
   # Local offline run (0 network sockets, hard rules only)

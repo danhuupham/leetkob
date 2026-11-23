@@ -2,7 +2,7 @@
 // 1. C++17 AST/syntax hard rules first (`D1` — zero model calls for ban-list constraints)
 // 2. 1:1 line-preserving comment & student PII stripping (`sanitizeCode`)
 // 3. `MODEL_OFF=1` & per-lab cost cap (`G4`) gates
-// 4. Gemini 3.8 Flash semantic verification with timeout (`G3`), schema (`G1`), deduction strip (`G5`),
+// 4. Gemini 3 Flash Preview (`gemini-3-flash-preview`) semantic verification with timeout (`G3`), schema (`G1`), deduction strip (`G5`),
 //    and exact source-line evidence verification (`G2`).
 
 import { performance } from 'node:perf_hooks';
