@@ -7,9 +7,12 @@
 - `23120256` — Trần Đại Hiệp
 
 **LLM Feature Data & Cost Declaration (AI-LOG Rule #6 & Brief §3, §5):**
-- **Model & Provider:** Google Gemini `gemini-3.8-flash` (`MODEL_PROVIDER=gemini`, `MODEL_NAME=gemini-3.8-flash`; migrated from `gemini-2.5-flash` ahead of its December 1, 2026 API sunset), called exclusively from the server.
+- **Model & Provider:** Google Gemini API (`MODEL_PROVIDER=gemini`) — default `gemini-3.8-flash` (`src/config.js`), with `MODEL_NAME=gemini-3-flash-preview` used for the committed `PA#3` dev-set run (`eval/runs/pa3-dev/`) and live deployment, called exclusively from the backend server.
 - **Data Leaving the System (`PA#3`+):** Only the lab problem statement, the TA's declared constraint text, and the C++ source code of an `Accepted` submission after stripping comments, student names, and student IDs (`FAQ-06`). No student PII, grades, or test inputs/outputs are sent to the model.
-- **Cost & Spending Cap:** At `gemini-3.8-flash` standard pricing through Dec 31, 2026 (`$0.75 / 1M` input tokens, `$3.75 / 1M` output tokens), checking one lab of 80 Accepted C++ submissions (`~1,200` input tokens + `~250` output tokens per semantic constraint check = `96,000` input + `20,000` output tokens) costs `$0.072 + $0.075 = ~$0.147 USD` (~15 cents per lab). `src/config.js` enforces a per-lab cap of `MODEL_MAX_COST_USD_PER_LAB=0.50`, and the provider API key has a hard monthly cap of `$5.00 USD/month` configured in Google Cloud Billing / AI Studio. Unit, contract, and e2e tests in CI never call the live model API.
+- **Cost & Spending Cap:**
+  - **Budget estimate (`gemini-3.8-flash`, `$0.75 / 1M` input, `$3.75 / 1M` output):** checking one lab of 80 Accepted C++ submissions (`~1,200` input tokens + `~250` output tokens per semantic constraint check = `96,000` input + `20,000` output tokens) costs `$0.072 + $0.075 = ~$0.147 USD` (~15 cents per lab).
+  - **Measured `PA#3` dev-set run (`gemini-3-flash-preview`, `$0.50 / 1M` input, `$3.00 / 1M` output including thinking tokens):** across `39/39 ok` calls in `eval/runs/pa3-dev/call-log.jsonl`, `38,522` input tokens + `4,851` output/thinking tokens cost **`$0.033814 USD`** total (`$0.000867/call`) → **`~$0.069 USD`** per 80-submission lab (`~$0.097 USD/lab` at `gemini-3.8-flash` rates).
+  - `src/config.js` enforces a per-lab cap of `MODEL_MAX_COST_USD_PER_LAB=0.50`, and the provider API key has a hard monthly cap of `$5.00 USD/month` configured in Google Cloud Billing / AI Studio. Unit, contract, and e2e tests in CI never call the live model API.
 
 ---
 
