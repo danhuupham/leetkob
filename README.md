@@ -13,7 +13,7 @@
 | Milestone | Tag | Submission Index & Evidence |
 |---|---|---|
 | **`PA#2`** — Harness, Quality Gate & Endpoint Contract | [`pa2`](https://github.com/danhuupham/leetkob/tree/pa2) | [`PA2.md`](PA2.md) · [`docs/contract/publish.md`](docs/contract/publish.md) · [`docs/assessments/PA2-SELF_ASSESSMENT_REPORT.md`](docs/assessments/PA2-SELF_ASSESSMENT_REPORT.md) |
-| **`PA#3`** — Prototype with the LLM Feature Running | `pa3` *(upcoming)* | [`docs/plans/PA3-Plan.md`](docs/plans/PA3-Plan.md) (`PA3.md` at submission) |
+| **`PA#3`** — Prototype with the LLM Feature Running | [`pa3`](https://github.com/danhuupham/leetkob/tree/pa3) | [`PA3.md`](PA3.md) · [`eval/runs/pa3-dev/report.txt`](eval/runs/pa3-dev/report.txt) · [`SELF_ASSESSMENT_REPORT.md`](SELF_ASSESSMENT_REPORT.md) |
 | **`PA#4`** — Eval Gate, Guardrails, Human Gate & Red-Team | `pa4` *(upcoming)* | [`docs/plans/PA4-Plan.md`](docs/plans/PA4-Plan.md) (`PA4.md` at submission) |
 | **`PA#5`** — Final Build, Observability & 80-User Load Test | `pa5` *(upcoming)* | [`docs/plans/PA5-Plan.md`](docs/plans/PA5-Plan.md) (`PA5.md` at submission) |
 | **`PA#6`** — Final Demo & Individual Oral | `pa5` | [`docs/plans/PA6-Plan.md`](docs/plans/PA6-Plan.md) (`OWNERS.md` at submission) |
