@@ -2075,7 +2075,8 @@ export async function evaluateHardRule(constraint, rawCode) {
   const violationLineSet = new Set();
 
   for (const target of bannedTargets) {
-    // 1. Scan normal code (including macro invocations and alias usages)
+    // Scan code tokens (including expanded `#define` macro invocations and alias usages);
+    // unused `#define` definitions are ignored until invoked.
     const codeHits = scanTokensForTarget({
       target,
       tokens,
@@ -2091,26 +2092,6 @@ export async function evaluateHardRule(constraint, rawCode) {
     });
     for (const ln of codeHits) {
       if (ln >= 1 && ln <= originalLines.length) violationLineSet.add(ln);
-    }
-
-    // 2. Also flag standalone `#define` macros whose body explicitly contains a banned keyword/qualified target
-    for (const macro of macros.values()) {
-      const macroHits = scanTokensForTarget({
-        target,
-        tokens: macro.bodyTokens,
-        tokenScopes: null,
-        defaultScope: rootScope,
-        declIndices: null,
-        includes: [],
-        macros,
-        userClassMembers,
-        allUserNamespaces,
-        visitedMacros: new Set([macro.name]),
-        visitedAliases: new Set(),
-      });
-      if (macroHits.length > 0 && macro.line >= 1 && macro.line <= originalLines.length) {
-        violationLineSet.add(macro.line);
-      }
     }
   }
 
